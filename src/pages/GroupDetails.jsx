@@ -945,7 +945,7 @@ const GroupDetails = () => {
         </div>
 
         {/* Standalone White Card for Statistics Grid */}
-        <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
           
           {/* Total Spent */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md">

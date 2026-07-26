@@ -151,7 +151,7 @@ const GroupOverviewTab = ({
               </h3>
               <div className="h-48">
                 {isClient && trendData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
                     <LineChart data={trendData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                       <XAxis dataKey="formatted" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} dy={10} />
@@ -177,7 +177,7 @@ const GroupOverviewTab = ({
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total</span>
                       <span className="text-lg font-bold text-slate-800 dark:text-white">{formatCurrency(totalExpenses)}</span>
                     </div>
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={1} minWidth={1}>
                       <PieChart>
                         <Pie 
                           data={memberPaidData} 

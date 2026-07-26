@@ -34,6 +34,12 @@ const ChatDrawer = ({ groupId, groupName, isOpen, onClose }) => {
       fetchMessages();
 
       const socketUrl = import.meta.env.MODE === 'production' ? 'https://smartsplitbackend.vercel.app' : (import.meta.env.VITE_API_URL || 'http://localhost:5000');
+      
+      if (socketUrl.includes('vercel.app')) {
+        console.warn('WebSockets are disabled on Vercel deployments. Falling back to HTTP polling.');
+        return;
+      }
+
       socketRef.current = io(socketUrl, {
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
