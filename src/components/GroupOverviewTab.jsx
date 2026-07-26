@@ -36,36 +36,27 @@ const GroupOverviewTab = ({
     settlements.filter(s => s.status === 'pending'), 
   [settlements]);
 
-  // Calculate member balances based on the active group members
+  // SINGLE SOURCE OF TRUTH: Map balances directly from the backend summary
   const memberBalances = useMemo(() => {
+    if (group?.summary?.memberBalances) {
+      return [...group.summary.memberBalances].map(member => ({
+        ...member.user,
+        totalPaid: member.totalPaid || 0,
+        totalShare: member.totalShare || 0,
+        netBalance: member.netBalance || 0
+      })).sort((a, b) => b.netBalance - a.netBalance); // Sort by highest balance (to receive)
+    }
+
+    // Fallback if summary is completely missing
     if (!group?.members) return [];
     
-    return group.members.map(member => {
-      let totalPaid = 0;
-      let totalShare = 0;
-
-      expenses.forEach(e => {
-        // If they paid, add to total paid
-        if (e.paidBy?._id === member.user._id) {
-          totalPaid += e.amount;
-        }
-        
-        // Find their share
-        const mySplit = e.splitDetails?.find(s => s.user?._id === member.user._id);
-        if (mySplit) {
-          totalShare += mySplit.amount;
-        }
-      });
-
-      const netBalance = totalPaid - totalShare;
-      return {
-        ...member.user,
-        totalPaid,
-        totalShare,
-        netBalance
-      };
-    }).sort((a, b) => b.netBalance - a.netBalance); // Sort by highest balance (to receive)
-  }, [group, expenses]);
+    return group.members.map(member => ({
+      ...member.user,
+      totalPaid: 0,
+      totalShare: 0,
+      netBalance: 0
+    }));
+  }, [group]);
 
   // Top Contributor
   const topContributor = memberBalances[0] || null;

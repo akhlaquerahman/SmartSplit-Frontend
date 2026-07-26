@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import useGroupStore from '../store/useGroupStore';
 import useAuthStore from '../store/useAuthStore';
 import api from '../utils/api';
@@ -20,6 +21,7 @@ const formatCurrency = (amount) => `Rs. ${Number(amount || 0).toFixed(2)}`;
 const GroupDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const socketRef = useRef(null);
   const {
     activeGroup,
     expenses,
@@ -173,6 +175,36 @@ const GroupDetails = () => {
     description: '',
     category: ''
   });
+
+  useEffect(() => {
+    if (!id) return;
+    
+    // Connect socket to listen for real-time financial balance updates
+    const socketUrl = import.meta.env.MODE === 'production' ? 'https://smartsplitbackend.vercel.app' : (import.meta.env.VITE_API_URL || 'http://localhost:5000');
+    
+    if (!socketUrl.includes('vercel.app')) {
+      socketRef.current = io(socketUrl, {
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        timeout: 10000,
+      });
+
+      socketRef.current.emit('joinGroup', id);
+
+      socketRef.current.on('group:balance_updated', (data) => {
+        if (data.groupId === id) {
+          fetchGroupDetails(id);
+        }
+      });
+
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.emit('leaveGroup', id);
+          socketRef.current.disconnect();
+        }
+      };
+    }
+  }, [id, fetchGroupDetails]);
 
   useEffect(() => {
     if (showAddMember && !memberEmail) {
@@ -807,145 +839,158 @@ const GroupDetails = () => {
         </div>
       )}
 
-      <div className="space-y-6">
-        {/* Horizontal Gradient Header Card */}
+      <div className="flex flex-col">
+        {/* ================================================= */}
+        {/* HEADER */}
+        {/* ================================================= */}
         <div className="relative overflow-hidden bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 dark:from-slate-900 dark:to-slate-800 rounded-2xl md:rounded-[2rem] p-4 md:p-8 text-white shadow-sm border-none">
           {/* Subtle background abstract shapes */}
           <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white via-blue-100 to-transparent pointer-events-none" />
           
-          <div className="relative flex flex-col gap-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 md:gap-6 min-w-0">
-                {/* Compact icon container */}
-                <div className="w-10 h-10 md:w-20 md:h-20 rounded-full border-2 border-white/20 bg-white/10 backdrop-blur-sm flex items-center justify-center shrink-0 shadow-inner">
-                  <svg className="w-5 h-5 md:w-10 md:h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                  </svg>
+          <div className="relative flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 md:gap-6 min-w-0">
+              {/* Compact icon container */}
+              <div className="w-10 h-10 md:w-20 md:h-20 rounded-full border-2 border-white/20 bg-white/10 backdrop-blur-sm flex items-center justify-center shrink-0 shadow-inner">
+                <svg className="w-5 h-5 md:w-10 md:h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-lg md:text-3xl font-extrabold md:font-black tracking-tight leading-tight truncate">{activeGroup.name}</h2>
+                <p className="text-blue-100/90 dark:text-slate-300 text-[10px] md:text-sm mt-0.5 md:mt-1.5 font-medium max-w-xl line-clamp-1 md:line-clamp-2">
+                  {activeGroup.description || 'No description provided.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Edit/Delete Top-Right 3-dot dropdown menu on Mobile, and inline on Desktop */}
+            {isAdmin && (
+              <div className="relative shrink-0 flex items-center gap-2">
+                {/* Desktop Actions */}
+                <div className="hidden md:flex gap-2">
+                  <button 
+                    onClick={() => setShowEditModal(true)}
+                    className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-800 rounded-2xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-all shadow-sm border text-slate-700"
+                  >
+                    <Edit2 size={16} /> Edit
+                  </button>
+                  <button 
+                    onClick={handleDeleteGroup}
+                    disabled={isDeleting}
+                    className="px-4 py-2.5 bg-white hover:bg-red-50 text-red-600 rounded-2xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-all shadow-sm border"
+                  >
+                    <Trash2 size={16} /> Delete
+                  </button>
                 </div>
-                <div className="min-w-0">
-                  <h2 className="text-lg md:text-3xl font-extrabold md:font-black tracking-tight leading-tight truncate">{activeGroup.name}</h2>
-                  <p className="text-blue-100/90 dark:text-slate-300 text-[10px] md:text-sm mt-0.5 md:mt-1.5 font-medium max-w-xl line-clamp-1 md:line-clamp-2">
-                    {activeGroup.description || 'No description provided.'}
-                  </p>
+
+                {/* Mobile Actions 3-dot Toggle Button */}
+                <div className="md:hidden relative">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenGroupMenu(!openGroupMenu);
+                    }}
+                    className="p-2 hover:bg-white/10 active:bg-white/20 rounded-xl text-white transition-colors"
+                    title="Group Options"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+                    </svg>
+                  </button>
+
+                  {/* Compact Dropdown Menu */}
+                  <AnimatePresence>
+                    {openGroupMenu && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setOpenGroupMenu(false)} />
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                          className="absolute right-0 mt-2 w-36 z-50 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-1.5 shadow-xl text-slate-800 dark:text-white"
+                        >
+                          <button
+                            onClick={() => {
+                              setOpenGroupMenu(false);
+                              setShowEditModal(true);
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                          >
+                            <Edit2 size={13} /> Edit Group
+                          </button>
+                          <button
+                            onClick={() => {
+                              setOpenGroupMenu(false);
+                              handleDeleteGroup();
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 flex items-center gap-2"
+                          >
+                            <Trash2 size={13} /> Delete Group
+                          </button>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
-
-              {/* Edit/Delete Top-Right 3-dot dropdown menu on Mobile, and inline on Desktop */}
-              {isAdmin && (
-                <div className="relative shrink-0 flex items-center gap-2">
-                  {/* Desktop Actions */}
-                  <div className="hidden md:flex gap-2">
-                    <button 
-                      onClick={() => setShowEditModal(true)}
-                      className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-800 rounded-2xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-all shadow-sm border text-slate-700"
-                    >
-                      <Edit2 size={16} /> Edit
-                    </button>
-                    <button 
-                      onClick={handleDeleteGroup}
-                      disabled={isDeleting}
-                      className="px-4 py-2.5 bg-white hover:bg-red-50 text-red-600 rounded-2xl text-xs md:text-sm font-bold flex items-center gap-1.5 transition-all shadow-sm border"
-                    >
-                      <Trash2 size={16} /> Delete
-                    </button>
-                  </div>
-
-                  {/* Mobile Actions 3-dot Toggle Button */}
-                  <div className="md:hidden relative">
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenGroupMenu(!openGroupMenu);
-                      }}
-                      className="p-2 hover:bg-white/10 active:bg-white/20 rounded-xl text-white transition-colors"
-                      title="Group Options"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
-                      </svg>
-                    </button>
-
-                    {/* Compact Dropdown Menu */}
-                    <AnimatePresence>
-                      {openGroupMenu && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setOpenGroupMenu(false)} />
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                            className="absolute right-0 mt-2 w-36 z-50 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-1.5 shadow-xl text-slate-800 dark:text-white"
-                          >
-                            <button
-                              onClick={() => {
-                                setOpenGroupMenu(false);
-                                setShowEditModal(true);
-                              }}
-                              className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
-                            >
-                              <Edit2 size={13} /> Edit Group
-                            </button>
-                            <button
-                              onClick={() => {
-                                setOpenGroupMenu(false);
-                                handleDeleteGroup();
-                              }}
-                              className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 flex items-center gap-2"
-                            >
-                              <Trash2 size={13} /> Delete Group
-                            </button>
-                          </motion.div>
-                        </>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Compact pill action buttons, horizontally scrollable on mobile */}
-            <div className="flex items-center gap-2 w-full overflow-x-auto no-scrollbar scroll-smooth pt-2 md:pt-4 border-t border-white/10 pb-0.5">
-              <button 
-                onClick={() => setShowExpenseModal(true)} 
-                className="bg-white text-primary-600 hover:bg-slate-50 rounded-full px-4 py-2 text-xs md:text-sm font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 shrink-0 h-9"
-              >
-                <Plus size={14} className="stroke-[3]" /> Expense
-              </button>
-              {isAdmin && (
-                <button 
-                  onClick={() => setShowAddMember(true)} 
-                  className="bg-white/15 text-white border border-white/10 hover:bg-white/20 rounded-full px-4 py-2 text-xs md:text-sm font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all active:scale-95 shrink-0 h-9"
-                >
-                  <UserPlus size={14} className="stroke-[3]" /> Member
-                </button>
-              )}
-              <button 
-                onClick={() => setShowSettlementModal(true)} 
-                className="bg-white/15 text-white border border-white/10 hover:bg-white/20 rounded-full px-4 py-2 text-xs md:text-sm font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all active:scale-95 shrink-0 h-9"
-              >
-                <QrCode size={14} className="stroke-[3]" /> Settle
-              </button>
-              <button 
-                onClick={() => setShowChat(true)} 
-                className="bg-white/15 text-white border border-white/10 hover:bg-white/20 rounded-full px-4 py-2 text-xs md:text-sm font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all active:scale-95 shrink-0 h-9"
-              >
-                <MessageCircle size={14} className="stroke-[3]" /> Chat
-              </button>
-              <button 
-                onClick={() => navigate(`/reports?groupId=${activeGroup._id}`)} 
-                className="bg-blue-500/20 text-blue-100 border border-blue-400/20 hover:bg-blue-500/30 rounded-full px-4 py-2 text-xs md:text-sm font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all active:scale-95 shrink-0 h-9"
-              >
-                <FileText size={14} className="stroke-[3]" /> Report
-              </button>
-            </div>
+            )}
           </div>
         </div>
 
-        {/* Standalone White Card for Statistics Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+        {/* ================================================= */}
+        {/* SECTION 1: Quick Actions (24px gap from header) */}
+        {/* ================================================= */}
+        <div className="mt-6 flex flex-wrap items-center justify-center md:justify-start gap-1.5 md:gap-3 px-1 md:px-0">
+          {/* Primary: Add Expense */}
+          <button 
+            onClick={() => setShowExpenseModal(true)} 
+            className="h-[38px] md:h-[48px] px-2.5 md:px-5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 shadow-sm transition-all active:scale-95"
+          >
+            <Plus size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Add Expense
+          </button>
+          
+          {/* Success: Settlement */}
+          <button 
+            onClick={() => setShowSettlementModal(true)} 
+            className="h-[38px] md:h-[48px] px-2.5 md:px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 shadow-sm transition-all active:scale-95"
+          >
+            <QrCode size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Settle Up
+          </button>
+          
+          {/* Outline: Member */}
+          {isAdmin && (
+            <button 
+              onClick={() => setShowAddMember(true)} 
+              className="h-[38px] md:h-[48px] px-2.5 md:px-5 border-2 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 transition-all active:scale-95"
+            >
+              <UserPlus size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Add Member
+            </button>
+          )}
+
+          {/* Secondary: Report */}
+          <button 
+            onClick={() => navigate(`/reports?groupId=${activeGroup._id}`)} 
+            className="h-[38px] md:h-[48px] px-2.5 md:px-5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 transition-all active:scale-95"
+          >
+            <FileText size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Report
+          </button>
+
+          {/* Ghost: Chat */}
+          <button 
+            onClick={() => setShowChat(true)} 
+            className="h-[38px] md:h-[48px] px-2.5 md:px-5 hover:bg-slate-100 dark:hover:bg-slate-800 bg-transparent text-slate-600 dark:text-slate-300 rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 transition-all active:scale-95"
+          >
+            <MessageCircle size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Chat
+          </button>
+        </div>
+
+        {/* ================================================= */}
+        {/* SECTION 2: Statistics Cards (24px gap from actions) */}
+        {/* ================================================= */}
+        <div className="mt-6 grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
           
           {/* Total Spent */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md">
@@ -1046,37 +1091,62 @@ const GroupDetails = () => {
 
         </div>
 
-        {/* Clean Line Tabs */}
-        <div className="flex overflow-x-auto no-scrollbar gap-5 border-b border-slate-200 dark:border-slate-800 px-1 mt-4 shrink-0">
-          {[
-            { key: 'overview', label: 'Overview' },
-            { key: 'expenses', label: 'Expenses' },
-            { key: 'members', label: 'Members' },
-            { key: 'settlements', label: 'Settlements' },
-            { key: 'payments', label: 'Payments' }
-          ].map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setTab(item.key)}
-              className={cn(
-                "pb-2.5 text-xs font-bold transition-all relative whitespace-nowrap",
-                tab === item.key
-                  ? "text-primary-600 dark:text-blue-400 font-extrabold"
-                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-              )}
-            >
-              {item.label}
-              {tab === item.key && (
-                <motion.div 
-                  layoutId="active-tab-indicator"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600 dark:bg-blue-400"
-                />
-              )}
-            </button>
-          ))}
+        {/* ================================================= */}
+        {/* SECTION 3: Premium Navigation Tabs (32px gap) */}
+        {/* ================================================= */}
+        <div className="mt-8 sticky -top-3 md:-top-6 lg:-top-8 z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm pt-4 md:pt-6 lg:pt-8 pb-2 -mx-4 px-4 md:mx-0 md:px-0 border-b border-slate-200 dark:border-slate-800 transition-all duration-200">
+          <div className="flex overflow-x-auto no-scrollbar gap-1 md:gap-3 w-full">
+            {[
+              { key: 'overview', label: 'Overview', count: null },
+              { key: 'expenses', label: 'Expenses', count: expenses?.length || 0 },
+              { key: 'members', label: 'Members', count: activeGroup.members?.length || 0 },
+              { key: 'settlements', label: 'Settlements', count: settlements?.length || 0 },
+              { key: 'payments', label: 'Payments', count: expenses?.filter(e => e.category === 'Payment' || e.isPayment)?.length || 0 }
+            ].map((item) => {
+              const isActive = tab === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setTab(item.key)}
+                  className={cn(
+                    "relative h-[36px] md:h-[46px] px-2.5 md:px-5 rounded-lg md:rounded-[10px] text-[12px] md:text-[15px] font-semibold transition-all duration-200 shrink-0 flex items-center justify-center gap-1 md:gap-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900",
+                    isActive
+                      ? "bg-blue-50/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                      : "bg-transparent text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                  )}
+                  aria-label={`${item.label} Tab ${item.count !== null ? `with ${item.count} items` : ''}`}
+                  aria-selected={isActive}
+                  role="tab"
+                >
+                  <span>{item.label}</span>
+                  {item.count !== null && item.count > 0 && (
+                    <span className={cn(
+                      "px-1 py-0.5 rounded-md text-[9px] md:text-[10px] font-bold tracking-wide flex items-center justify-center leading-none",
+                      isActive 
+                        ? "bg-blue-100/80 text-blue-700 dark:bg-blue-800/50 dark:text-blue-300" 
+                        : "bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+                    )}>
+                      {item.count}
+                    </span>
+                  )}
+                  
+                  {isActive && (
+                    <motion.div 
+                      layoutId="active-tab-indicator"
+                      className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-[3px] bg-blue-600 dark:bg-blue-500 rounded-t-full"
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
+        {/* ================================================= */}
+        {/* CONTENT (24px gap from tabs) */}
+        {/* ================================================= */}
+        <div className="mt-6">
         {tab === 'overview' && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
             <GroupOverviewTab 
@@ -1154,6 +1224,7 @@ const GroupDetails = () => {
             <GroupPaymentsTab groupId={activeGroup._id} groupMembers={activeGroup.members} />
           </motion.div>
         )}
+        </div>
       </div>
 
       <AnimatePresence>
