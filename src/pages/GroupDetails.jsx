@@ -945,7 +945,7 @@ const GroupDetails = () => {
         </div>
 
         {/* Standalone White Card for Statistics Grid */}
-        <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] md:grid-cols-5 gap-3 md:gap-4">
+        <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
           
           {/* Total Spent */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md">
@@ -959,6 +959,21 @@ const GroupDetails = () => {
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="5" width="20" height="14" rx="2" />
                 <line x1="2" y1="10" x2="22" y2="10" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Net Balance */}
+          <div className={`bg-white dark:bg-slate-900 rounded-2xl border ${currentMemberBalance < 0 ? 'border-rose-200 dark:border-rose-900/50' : currentMemberBalance > 0 ? 'border-emerald-200 dark:border-emerald-900/50' : 'border-slate-100 dark:border-slate-800/80'} p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md`}>
+            <div className="min-w-0">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Net Balance</p>
+              <p className={`text-sm md:text-xl font-extrabold mt-1.5 truncate ${currentMemberBalance < 0 ? 'text-rose-600 dark:text-rose-400' : currentMemberBalance > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-white'}`}>
+                {currentMemberBalance < 0 ? ' ' : currentMemberBalance > 0 ? ' ' : ''}{formatCurrency(Math.abs(currentMemberBalance))}
+              </p>
+            </div>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${currentMemberBalance < 0 ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400' : currentMemberBalance > 0 ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
               </svg>
             </div>
           </div>
@@ -1014,7 +1029,7 @@ const GroupDetails = () => {
           </div>
 
           {/* Pending */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md col-span-2 md:col-span-1">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md">
             <div className="min-w-0">
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Pending</p>
               <p className="text-sm md:text-xl font-extrabold mt-1.5 text-slate-800 dark:text-white truncate">

@@ -234,8 +234,12 @@ const GroupOverviewTab = ({
                 
                 return (
                   <div key={member._id} className="flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-600 shrink-0">
-                      {member.name.substring(0, 2).toUpperCase()}
+                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-xs text-slate-600 shrink-0 overflow-hidden">
+                      {member.avatar ? (
+                        <img src={member.avatar} alt={member.name} className="w-full h-full object-cover" />
+                      ) : (
+                        member.name.substring(0, 2).toUpperCase()
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-1">
@@ -293,8 +297,12 @@ const GroupOverviewTab = ({
               </div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1"><Award size={12}/> Top Contributor</p>
               <div className="flex items-center gap-3 relative z-10">
-                <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center font-bold text-amber-600">
-                  {topContributor.name.substring(0,2).toUpperCase()}
+                <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center font-bold text-amber-600 overflow-hidden">
+                  {topContributor.avatar ? (
+                    <img src={topContributor.avatar} alt={topContributor.name} className="w-full h-full object-cover" />
+                  ) : (
+                    topContributor.name.substring(0,2).toUpperCase()
+                  )}
                 </div>
                 <div>
                   <h4 className="font-bold text-slate-800 dark:text-white">{topContributor.name}</h4>
@@ -309,8 +317,12 @@ const GroupOverviewTab = ({
             <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 border shadow-sm border-rose-100 dark:border-rose-900/30">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1 text-rose-500"><AlertCircle size={12}/> Highest Balance Alert</p>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center font-bold text-rose-600">
-                  {highestOwed.name.substring(0,2).toUpperCase()}
+                <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center font-bold text-rose-600 overflow-hidden">
+                  {highestOwed.avatar ? (
+                    <img src={highestOwed.avatar} alt={highestOwed.name} className="w-full h-full object-cover" />
+                  ) : (
+                    highestOwed.name.substring(0,2).toUpperCase()
+                  )}
                 </div>
                 <div>
                   <h4 className="font-bold text-slate-800 dark:text-white">{highestOwed.name}</h4>

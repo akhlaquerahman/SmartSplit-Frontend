@@ -34,7 +34,16 @@ const ChatDrawer = ({ groupId, groupName, isOpen, onClose }) => {
       fetchMessages();
 
       const socketUrl = import.meta.env.MODE === 'production' ? 'https://smartsplitbackend.vercel.app' : (import.meta.env.VITE_API_URL || 'http://localhost:5000');
-      socketRef.current = io(socketUrl);
+      socketRef.current = io(socketUrl, {
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 10000,
+      });
+
+      socketRef.current.on('connect_error', (err) => {
+        console.warn('Socket connection error. Realtime chat may be unavailable:', err.message);
+      });
 
       socketRef.current.emit('joinGroup', groupId);
 

@@ -10,7 +10,17 @@ const TraceSocketProvider = ({ children }) => {
       ? 'https://smartsplitbackend.vercel.app' 
       : (import.meta.env.VITE_API_URL || 'http://localhost:5000');
       
-    const socket = io(socketUrl);
+    const socket = io(socketUrl, {
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+    });
+
+    socket.on('connect_error', (err) => {
+      console.warn('[TRACE-UI] Socket connection error. Realtime may be unavailable:', err.message);
+    });
+
 
     socket.on('connect', () => {
       console.log(`[TRACE-UI] Socket Connected`);

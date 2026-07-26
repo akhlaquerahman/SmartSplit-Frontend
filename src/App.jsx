@@ -6,6 +6,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import useAuthStore from './store/useAuthStore';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import TraceSocketProvider from './context/TraceSocketProvider';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const queryClient = new QueryClient();
 
@@ -25,7 +26,9 @@ function App() {
       <TraceSocketProvider>
         <ThemeProvider>
           <BrowserRouter>
-            <AppRoutes />
+            <ErrorBoundary message="A critical UI error occurred and the application needs to be refreshed.">
+              <AppRoutes />
+            </ErrorBoundary>
           </BrowserRouter>
         </ThemeProvider>
       </TraceSocketProvider>
