@@ -126,62 +126,64 @@ const KnowledgeBase = () => {
              <span className="flex items-center gap-1"><Database className="w-4 h-4 text-emerald-500" /> MongoDB Sync Active</span>
           </div>
         </div>
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-gray-50 dark:bg-black/50 text-xs uppercase text-gray-500 font-semibold tracking-wider">
-              <th className="p-4">Document</th>
-              <th className="p-4">Status</th>
-              <th className="p-4">Chunks (Tokens)</th>
-              <th className="p-4">Uploader</th>
-              <th className="p-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-white/5">
-            {isLoading ? (
-              <tr>
-                <td colSpan="5" className="p-8 text-center text-gray-500">Loading documents...</td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[640px]">
+            <thead>
+              <tr className="bg-gray-50 dark:bg-black/50 text-xs uppercase text-gray-500 font-semibold tracking-wider">
+                <th className="p-4">Document</th>
+                <th className="p-4">Status</th>
+                <th className="p-4">Chunks (Tokens)</th>
+                <th className="p-4">Uploader</th>
+                <th className="p-4 text-right">Actions</th>
               </tr>
-            ) : filteredDocs.length === 0 ? (
-              <tr>
-                <td colSpan="5" className="p-8 text-center text-gray-500">No documents found. Upload one to get started.</td>
-              </tr>
-            ) : (
-              filteredDocs.map((doc) => (
-                <tr key={doc._id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer" onClick={() => handleRowClick(doc._id)}>
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-500">
-                        <FileText className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-gray-900 dark:text-white">{doc.title}</p>
-                        <p className="text-xs text-gray-500">{doc.type} • {new Date(doc.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex w-max items-center gap-1 ${doc.status === 'Indexed' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30' : doc.status === 'Failed' ? 'bg-red-50 text-red-600 dark:bg-red-900/30' : 'bg-amber-50 text-amber-600 dark:bg-amber-900/30'}`}>
-                      {doc.status === 'Processing' && <RefreshCw className="w-3 h-3 animate-spin" />}
-                      {doc.status}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{doc.totalChunks || 0} chunks</span>
-                      {doc.totalTokens > 0 && <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">~{doc.totalTokens} tkns</span>}
-                    </div>
-                  </td>
-                  <td className="p-4 text-sm text-gray-600 dark:text-gray-400 font-medium">{doc.uploader?.name || 'System'}</td>
-                  <td className="p-4 text-right flex items-center justify-end gap-1">
-                    <button className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded text-blue-500 transition tooltip" title="Preview Chunks" onClick={(e) => { e.stopPropagation(); handleRowClick(doc._id); }}><Eye className="w-4 h-4" /></button>
-                    <button className="p-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded text-emerald-500 transition tooltip" title="Refresh" onClick={(e) => { e.stopPropagation(); queryClient.invalidateQueries(); }}><RefreshCw className="w-4 h-4" /></button>
-                    <button className="p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-red-500 transition tooltip" title="Delete" onClick={(e) => { e.stopPropagation(); handleDelete(doc._id); }}><Trash2 className="w-4 h-4" /></button>
-                  </td>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-white/5">
+              {isLoading ? (
+                <tr>
+                  <td colSpan="5" className="p-8 text-center text-gray-500">Loading documents...</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : filteredDocs.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="p-8 text-center text-gray-500">No documents found. Upload one to get started.</td>
+                </tr>
+              ) : (
+                filteredDocs.map((doc) => (
+                  <tr key={doc._id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer" onClick={() => handleRowClick(doc._id)}>
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-500 shrink-0">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-gray-900 dark:text-white">{doc.title}</p>
+                          <p className="text-xs text-gray-500">{doc.type} • {new Date(doc.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex w-max items-center gap-1 ${doc.status === 'Indexed' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30' : doc.status === 'Failed' ? 'bg-red-50 text-red-600 dark:bg-red-900/30' : 'bg-amber-50 text-amber-600 dark:bg-amber-900/30'}`}>
+                        {doc.status === 'Processing' && <RefreshCw className="w-3 h-3 animate-spin" />}
+                        {doc.status}
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{doc.totalChunks || 0} chunks</span>
+                        {doc.totalTokens > 0 && <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">~{doc.totalTokens} tkns</span>}
+                      </div>
+                    </td>
+                    <td className="p-4 text-sm text-gray-600 dark:text-gray-400 font-medium">{doc.uploader?.name || 'System'}</td>
+                    <td className="p-4 text-right flex items-center justify-end gap-1">
+                      <button className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded text-blue-500 transition tooltip" title="Preview Chunks" onClick={(e) => { e.stopPropagation(); handleRowClick(doc._id); }}><Eye className="w-4 h-4" /></button>
+                      <button className="p-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded text-emerald-500 transition tooltip" title="Refresh" onClick={(e) => { e.stopPropagation(); queryClient.invalidateQueries(); }}><RefreshCw className="w-4 h-4" /></button>
+                      <button className="p-2 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-red-500 transition tooltip" title="Delete" onClick={(e) => { e.stopPropagation(); handleDelete(doc._id); }}><Trash2 className="w-4 h-4" /></button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {isDrawerOpen && selectedDocId && (

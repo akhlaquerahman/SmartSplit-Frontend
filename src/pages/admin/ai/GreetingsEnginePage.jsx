@@ -31,27 +31,25 @@ const GreetingsEnginePage = () => {
   const { data: stats, isLoading } = useDashboardStats();
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
-      <header className="flex justify-between items-start">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto space-y-6 sm:space-y-8 animate-in fade-in duration-500">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Greetings & Fallback Engine</h1>
-          <p className="text-gray-500 max-w-3xl">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Greetings & Fallback Engine</h1>
+          <p className="text-gray-500 text-sm sm:text-base max-w-3xl">
             Manage welcome messages, fallback responses, escalation logic, multilingual greetings and AI confidence rules.
           </p>
         </div>
         <button 
           onClick={openTestPanel}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 sm:px-5 py-2.5 rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap self-start sm:self-auto"
         >
           <Play size={18} fill="currentColor" />
           Test Engine
         </button>
       </header>
 
-
-
       {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <KPICard title="Total Greetings" value={stats?.totalGreetings} icon={MessageSquare} trend="+12%" />
         <KPICard title="Fallback Rules" value={stats?.totalFallbacks} icon={ShieldAlert} trend="+2%" />
         <KPICard title="Today's Triggers" value={stats?.todaysTriggerCount} icon={Activity} trend="+45%" />

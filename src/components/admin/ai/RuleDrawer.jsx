@@ -70,7 +70,7 @@ const RuleDrawer = () => {
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-40" onClick={closeDrawer}></div>
-      <div className="fixed top-0 right-0 h-full w-[600px] bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl transform transition-transform duration-300 ease-in-out">
+      <div className="fixed top-0 right-0 h-full w-full sm:w-[600px] max-w-full bg-white border-l border-gray-200 z-50 flex flex-col shadow-2xl transform transition-transform duration-300 ease-in-out">
         <div className="flex justify-between items-center p-6 border-b border-gray-200">
           <h2 className="text-xl font-bold text-gray-900 capitalize">
             {selectedRule ? 'Edit' : 'New'} Rule

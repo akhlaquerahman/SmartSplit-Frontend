@@ -342,3 +342,33 @@
   padding: 24px;
   overflow-y: auto;
 }
+
+@media (max-width: 640px) {
+  .knowledge-base-container {
+    padding: 16px;
+  }
+  .knowledge-header-row {
+    flex-direction: column;
+    gap: 16px;
+  }
+  .upload-area {
+    padding: 24px 16px;
+  }
+  .table-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .search-bar {
+    width: 100%;
+  }
+  .table-wrapper {
+    overflow-x: auto;
+  }
+  .knowledge-table {
+    min-width: 600px;
+  }
+  .drawer-panel {
+    width: 100%;
+  }
+}

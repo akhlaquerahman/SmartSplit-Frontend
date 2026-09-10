@@ -54,7 +54,7 @@ export default function KnowledgeBase() {
 
       <UploadArea onSuccess={() => queryClient.invalidateQueries()} />
 
-      <div className="table-wrapper">
+      <div className="table-wrapper overflow-x-auto">
         <div className="table-controls">
           <div className="search-bar">
             <i className="fas fa-search"></i>

@@ -20,7 +20,7 @@ const AITestPanel = () => {
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-40" onClick={closeTestPanel}></div>
-      <div className="fixed top-0 right-0 h-full w-[400px] bg-white border-l border-gray-200 z-50 shadow-2xl transform transition-transform duration-300 flex flex-col">
+      <div className="fixed top-0 right-0 h-full w-full sm:w-[400px] max-w-full bg-white border-l border-gray-200 z-50 shadow-2xl transform transition-transform duration-300 flex flex-col">
         <div className="flex justify-between items-center p-6 border-b border-gray-200">
           <h3 className="text-xl font-bold text-gray-900">AI Test Panel</h3>
           <button onClick={closeTestPanel} className="text-gray-500 hover:text-gray-800">
