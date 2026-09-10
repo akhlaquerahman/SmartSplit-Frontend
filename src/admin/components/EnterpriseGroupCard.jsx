@@ -35,7 +35,7 @@ const EnterpriseGroupCard = ({ group, onClick, onDelete }) => {
     <motion.div 
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="bg-white dark:bg-[#16181d] rounded-2xl border border-slate-200 dark:border-slate-800/60 shadow-sm hover:shadow-md transition-all group/card flex flex-col relative"
+      className="bg-white dark:bg-[#16181d] rounded-2xl border border-slate-200 dark:border-slate-800/60 shadow-sm hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 transition-all group/card flex flex-col relative cursor-pointer"
       onClick={() => onClick(group)}
     >
       {/* Card Header */}

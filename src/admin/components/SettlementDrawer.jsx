@@ -1,13 +1,36 @@
 import React, { useState } from 'react';
-import { X, Users, Receipt, Calendar, Activity, Shield, ArrowRight, Download, CheckCircle2, ShieldAlert, XCircle, FileClock, History } from 'lucide-react';
+import { X, Users, Receipt, Calendar, Activity, Shield, ArrowRight, Download, CheckCircle2, ShieldAlert, XCircle, FileClock, History, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../utils/cn';
 
-const SettlementDrawer = ({ settlement, isOpen, onClose }) => {
+const SettlementDrawer = ({ settlement, isOpen, onClose, onForceComplete, onReject }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [ownerCompletionReason, setOwnerCompletionReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   if (!isOpen || !settlement) return null;
+
+  const handleForceComplete = async () => {
+    if (!onForceComplete) return;
+    setSubmitting(true);
+    try {
+      await onForceComplete(settlement._id, ownerCompletionReason);
+      setOwnerCompletionReason('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRejectAction = async () => {
+    if (!onReject) return;
+    setSubmitting(true);
+    try {
+      await onReject(settlement._id, ownerCompletionReason);
+      setOwnerCompletionReason('');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -325,13 +348,19 @@ const SettlementDrawer = ({ settlement, isOpen, onClose }) => {
                   />
                </div>
               <div className="flex gap-3">
-                <button className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50">
-                  <CheckCircle2 size={16} /> Force Complete
+                <button 
+                  onClick={handleForceComplete}
+                  disabled={submitting}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  {submitting ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Force Complete
                 </button>
                 <button 
-                  className="px-6 py-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center"
+                  onClick={handleRejectAction}
+                  disabled={submitting}
+                  className="px-6 py-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-black uppercase tracking-wider transition-colors flex items-center justify-center cursor-pointer disabled:opacity-50"
                 >
-                  Reject
+                  {submitting ? <RefreshCw size={16} className="animate-spin" /> : 'Reject'}
                 </button>
               </div>
             </div>

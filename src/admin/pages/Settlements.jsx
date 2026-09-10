@@ -93,6 +93,57 @@ const Settlements = () => {
     setIsDrawerOpen(true);
   };
 
+  const handleForceComplete = async (settlementId, reason = '') => {
+    try {
+      await api.patch(`/admin/settlements/${settlementId}/force-complete`, {
+        ownerCompletionReason: reason
+      });
+      setIsDrawerOpen(false);
+      fetchSettlements();
+    } catch (error) {
+      console.error('Error force completing settlement:', error);
+      alert(error.response?.data?.message || 'Failed to force complete settlement');
+    }
+  };
+
+  const handleReject = async (settlementId, reason = '') => {
+    try {
+      await api.patch(`/admin/settlements/${settlementId}/reject`, {
+        rejectionReason: reason
+      });
+      setIsDrawerOpen(false);
+      fetchSettlements();
+    } catch (error) {
+      console.error('Error rejecting settlement:', error);
+      alert(error.response?.data?.message || 'Failed to reject settlement');
+    }
+  };
+
+  const handleFlag = async (settlementId, currentFlaggedState) => {
+    try {
+      await api.patch(`/admin/settlements/${settlementId}/flag`, {
+        flagged: !currentFlaggedState,
+        reason: currentFlaggedState ? 'Unflagged by admin' : 'Flagged by admin'
+      });
+      fetchSettlements();
+    } catch (error) {
+      console.error('Error flagging settlement:', error);
+      alert(error.response?.data?.message || 'Failed to flag/unflag settlement');
+    }
+  };
+
+  const handleDelete = async (settlementId) => {
+    if (!window.confirm('Are you sure you want to delete this settlement record?')) return;
+    try {
+      await api.delete(`/admin/settlements/${settlementId}`);
+      if (drawerSettlement?._id === settlementId) setIsDrawerOpen(false);
+      fetchSettlements();
+    } catch (error) {
+      console.error('Error deleting settlement:', error);
+      alert(error.response?.data?.message || 'Failed to delete settlement');
+    }
+  };
+
   return (
     <div className="space-y-2 animate-in fade-in duration-500 pb-20">
       
@@ -136,6 +187,10 @@ const Settlements = () => {
             selectedSettlements={selectedSettlements}
             setSelectedSettlements={setSelectedSettlements}
             onRowClick={handleRowClick}
+            onForceComplete={handleForceComplete}
+            onReject={handleReject}
+            onFlag={handleFlag}
+            onDelete={handleDelete}
           />
           
           {/* Pagination */}
@@ -185,6 +240,8 @@ const Settlements = () => {
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         settlement={drawerSettlement}
+        onForceComplete={handleForceComplete}
+        onReject={handleReject}
       />
 
     </div>

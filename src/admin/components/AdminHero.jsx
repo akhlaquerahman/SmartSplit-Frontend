@@ -3,7 +3,21 @@ import { motion } from 'framer-motion';
 import { Activity, Server, Users, FolderOpen, Receipt, HandCoins, CheckCircle2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
+import useAuthStore from '../../store/useAuthStore';
+
 const AdminHero = ({ stats }) => {
+  const { user } = useAuthStore();
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 4 && hour < 12) return 'Good Morning';
+    if (hour >= 12 && hour < 17) return 'Good Afternoon';
+    if (hour >= 17 && hour < 22) return 'Good Evening';
+    return 'Good Night';
+  };
+
+  const adminName = user?.name?.split(' ')[0] || 'Admin';
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: -20 }}
@@ -15,9 +29,10 @@ const AdminHero = ({ stats }) => {
       
       <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-black mb-2 tracking-tight">Good Morning, Admin</h1>
+          <h1 className="text-3xl font-black mb-2 tracking-tight">
+            {getGreeting()}, Admin 👋
+          </h1>
         </div>
-
       </div>
 
       <div className="relative z-10 grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 pt-6 border-t border-white/10">

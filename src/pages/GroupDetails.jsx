@@ -770,10 +770,15 @@ const GroupDetails = () => {
   };
 
   const handleRespond = async (settlementId, action, disputeReason = '') => {
-    if (!activeGroup) return;
+    if (!activeGroup) return false;
     setProcessingSettlementId(settlementId);
-    await respondSettlement(settlementId, action, activeGroup._id, disputeReason);
+    const success = await respondSettlement(settlementId, action, activeGroup._id, disputeReason);
     setProcessingSettlementId(null);
+    if (!success) {
+      const errorMsg = useGroupStore.getState().error || 'Failed to update settlement request.';
+      alert(errorMsg);
+    }
+    return success;
   };
 
   useEffect(() => {
@@ -1780,6 +1785,45 @@ const GroupDetails = () => {
                     Screenshot <span className="text-xs bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-md">Click to view full size</span>
                   </p>
                   <img src={selectedSettlement.screenshot} alt="Settlement screenshot" className="w-full max-h-48 rounded-3xl object-cover" />
+                </div>
+              )}
+
+              {/* Action buttons for pending settlements */}
+              {selectedSettlement.status === 'pending' && (
+                <div className="mt-6 flex gap-3 border-t border-slate-100 dark:border-slate-800 pt-4">
+                  {((String(selectedSettlement.receiverId?._id || selectedSettlement.receiverId || '') === String(currentUser?._id || currentUser?.id || '')) || isAdmin || currentUser?.role === 'admin') && (
+                    <>
+                      <button 
+                        onClick={async () => {
+                          const res = await handleRespond(selectedSettlement._id, 'dispute');
+                          if (res !== false) setSelectedSettlement(null);
+                        }}
+                        className="flex-1 py-3 px-4 rounded-xl font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors text-sm shadow-sm cursor-pointer"
+                      >
+                        Reject
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          const res = await handleRespond(selectedSettlement._id, 'accept');
+                          if (res !== false) setSelectedSettlement(null);
+                        }}
+                        className="flex-1 py-3 px-4 rounded-xl font-bold bg-primary-600 text-white shadow-lg shadow-primary-500/20 hover:bg-primary-700 transition-colors text-sm cursor-pointer"
+                      >
+                        Accept & Verify
+                      </button>
+                    </>
+                  )}
+                  {String(selectedSettlement.payerId?._id || selectedSettlement.payerId || '') === String(currentUser?._id || currentUser?.id || '') && (
+                    <button 
+                      onClick={async () => {
+                        const res = await handleRespond(selectedSettlement._id, 'dispute');
+                        if (res !== false) setSelectedSettlement(null);
+                      }}
+                      className="w-full py-3 px-4 rounded-xl font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 transition-colors text-sm cursor-pointer"
+                    >
+                      Cancel Request
+                    </button>
+                  )}
                 </div>
               )}
             </motion.div>

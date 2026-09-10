@@ -26,7 +26,7 @@ const StatusBadge = ({ status }) => {
   return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-200/50 dark:border-blue-500/20 uppercase tracking-wider"><Clock size={10}/>Pending</span>;
 };
 
-const SettlementsTable = ({ settlements, selectedSettlements, setSelectedSettlements, onRowClick }) => {
+const SettlementsTable = ({ settlements, selectedSettlements, setSelectedSettlements, onRowClick, onForceComplete, onReject, onFlag, onDelete }) => {
   const [activeMenuId, setActiveMenuId] = useState(null);
 
   const toggleSelectAll = () => {
@@ -238,24 +238,52 @@ const SettlementsTable = ({ settlements, selectedSettlements, setSelectedSettlem
                             transition={{ duration: 0.1 }}
                             className="absolute right-6 top-10 w-48 bg-white dark:bg-[#1a1a1a] rounded-xl shadow-xl border border-slate-200 dark:border-slate-700/60 z-50 overflow-hidden py-1"
                           >
-                            <button onClick={() => { onRowClick(settlement); setActiveMenuId(null); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-left">
+                            <button onClick={() => { onRowClick(settlement); setActiveMenuId(null); }} className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors text-left cursor-pointer">
                               <Info size={14} /> View Details
                             </button>
                             {(settlement.status === 'pending' || settlement.status === 'disputed') && (
                               <>
-                                <button className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50 dark:text-emerald-500 dark:hover:bg-emerald-500/10 transition-colors text-left">
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onForceComplete && onForceComplete(settlement._id);
+                                    setActiveMenuId(null);
+                                  }} 
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50 dark:text-emerald-500 dark:hover:bg-emerald-500/10 transition-colors text-left cursor-pointer"
+                                >
                                   <BadgeCheck size={14} /> Force Complete
                                 </button>
-                                <button className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-500 dark:hover:bg-rose-500/10 transition-colors text-left">
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onReject && onReject(settlement._id);
+                                    setActiveMenuId(null);
+                                  }} 
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-500 dark:hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
+                                >
                                   <XCircle size={14} /> Reject Request
                                 </button>
                               </>
                             )}
                             <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
-                            <button className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-amber-600 hover:bg-amber-50 dark:text-amber-500 dark:hover:bg-amber-500/10 transition-colors text-left">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onFlag && onFlag(settlement._id, settlement.isFlagged);
+                                setActiveMenuId(null);
+                              }} 
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-amber-600 hover:bg-amber-50 dark:text-amber-500 dark:hover:bg-amber-500/10 transition-colors text-left cursor-pointer"
+                            >
                               <ShieldAlert size={14} /> {settlement.isFlagged ? 'Unflag' : 'Flag'} Record
                             </button>
-                            <button className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-500 dark:hover:bg-rose-500/10 transition-colors text-left">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete && onDelete(settlement._id);
+                                setActiveMenuId(null);
+                              }} 
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 dark:text-rose-500 dark:hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
+                            >
                               <Trash2 size={14} /> Delete Record
                             </button>
                           </motion.div>

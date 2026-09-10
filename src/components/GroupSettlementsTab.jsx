@@ -265,34 +265,75 @@ const GroupSettlementsTab = ({
               No settlements found.
             </div>
           ) : (
-            paginatedSettlements.map((s) => (
-              <div key={s._id} className="p-4 space-y-4 hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-lg font-black text-slate-900 dark:text-white">{formatCurrency(s.amount)}</span>
-                    <p className="text-[10px] font-bold text-slate-400 mt-1">{new Date(s.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+            paginatedSettlements.map((s) => {
+              const receiverIdStr = String(s.receiverId?._id || s.receiverId || '');
+              const payerIdStr = String(s.payerId?._id || s.payerId || '');
+              const currentUserIdStr = String(currentUser?._id || currentUser?.id || '');
+
+              const isReceiver = receiverIdStr === currentUserIdStr;
+              const isPayer = payerIdStr === currentUserIdStr;
+              const isUserAdmin = isAdmin || currentUser?.role === 'admin';
+              const canRespond = s.status === 'pending' && (isReceiver || isUserAdmin);
+              const canCancel = s.status === 'pending' && isPayer;
+
+              return (
+                <div key={s._id} className="p-4 space-y-4 hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-lg font-black text-slate-900 dark:text-white">{formatCurrency(s.amount)}</span>
+                      <p className="text-[10px] font-bold text-slate-400 mt-1">{new Date(s.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                    </div>
+                    {getStatusBadge(s.status)}
                   </div>
-                  {getStatusBadge(s.status)}
+                  <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <img src={s.payerId?.avatar || `https://ui-avatars.com/api/?name=${s.payerId?.name}`} className="w-5 h-5 rounded-full shrink-0 object-cover" alt="payer" />
+                      <span className="text-xs font-bold truncate text-slate-900 dark:text-slate-100">{s.payerId?.name?.split(' ')[0]}</span>
+                    </div>
+                    <span className="text-slate-300">→</span>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <img src={s.receiverId?.avatar || `https://ui-avatars.com/api/?name=${s.receiverId?.name}`} className="w-5 h-5 rounded-full shrink-0 object-cover" alt="receiver" />
+                      <span className="text-xs font-bold truncate text-slate-900 dark:text-slate-100">{s.receiverId?.name?.split(' ')[0]}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap justify-between items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] font-bold uppercase text-slate-400">{s.paymentType}</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {canRespond && (
+                        <>
+                          <button
+                            onClick={() => onRespond && onRespond(s._id, 'dispute')}
+                            className="px-2.5 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-lg hover:bg-rose-100 transition-colors"
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={() => onRespond && onRespond(s._id, 'accept')}
+                            className="px-2.5 py-1.5 text-xs font-bold text-white bg-primary-600 hover:bg-primary-700 shadow-sm rounded-lg transition-colors cursor-pointer"
+                          >
+                            Accept
+                          </button>
+                        </>
+                      )}
+                      {canCancel && (
+                        <button
+                          onClick={() => onRespond && onRespond(s._id, 'dispute')}
+                          className="px-2.5 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-300 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => setSelectedSettlement(s)} 
+                        className="text-xs font-bold text-primary-600 bg-primary-50 dark:bg-primary-950/40 dark:text-primary-400 px-3 py-1.5 rounded-lg border border-primary-200 dark:border-primary-800 cursor-pointer"
+                      >
+                        View Details
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <img src={s.payerId?.avatar || `https://ui-avatars.com/api/?name=${s.payerId?.name}`} className="w-5 h-5 rounded-full shrink-0 object-cover" alt="payer" />
-                    <span className="text-xs font-bold truncate text-slate-900 dark:text-slate-100">{s.payerId?.name?.split(' ')[0]}</span>
-                  </div>
-                  <span className="text-slate-300">→</span>
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <img src={s.receiverId?.avatar || `https://ui-avatars.com/api/?name=${s.receiverId?.name}`} className="w-5 h-5 rounded-full shrink-0 object-cover" alt="receiver" />
-                    <span className="text-xs font-bold truncate text-slate-900 dark:text-slate-100">{s.receiverId?.name?.split(' ')[0]}</span>
-                  </div>
-                </div>
-                <div className="flex justify-between items-center pt-2">
-                  <span className="text-[10px] font-bold uppercase text-slate-400">{s.paymentType}</span>
-                  <div className="flex gap-2">
-                    <button onClick={() => setSelectedSettlement(s)} className="text-xs font-bold text-primary-600 bg-primary-50 px-3 py-1.5 rounded-lg">View Details</button>
-                  </div>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -348,7 +389,7 @@ const GroupSettlementsTab = ({
           <>
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40"
+              className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[90]"
               onClick={() => setSelectedSettlement(null)}
             />
             <motion.div 
@@ -356,9 +397,9 @@ const GroupSettlementsTab = ({
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: '100%', opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-slate-900 shadow-2xl z-50 border-l border-slate-200 dark:border-slate-800 flex flex-col"
+              className="fixed top-0 right-0 h-full w-full max-w-md bg-white dark:bg-slate-900 shadow-2xl z-[100] border-l border-slate-200 dark:border-slate-800 flex flex-col"
             >
-              <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
                 <div>
                   <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Settlement Details</h3>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">ID: {selectedSettlement._id.slice(-8)}</p>
@@ -368,7 +409,7 @@ const GroupSettlementsTab = ({
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32">
                 <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                   <div>
                     <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Amount</p>
@@ -440,26 +481,47 @@ const GroupSettlementsTab = ({
               </div>
 
               {/* Action Buttons for Pending Settlements */}
-              {selectedSettlement.status === 'pending' && selectedSettlement.receiverId?._id === currentUser?._id && (
-                <div className="p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex gap-3">
-                  <button 
-                    onClick={() => {
-                      onRespond && onRespond(selectedSettlement._id, 'rejected');
-                      setSelectedSettlement(null);
-                    }}
-                    className="flex-1 py-3.5 px-4 rounded-xl font-bold bg-white border border-slate-200 text-slate-700 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors text-sm"
-                  >
-                    Reject
-                  </button>
-                  <button 
-                    onClick={() => {
-                      onRespond && onRespond(selectedSettlement._id, 'completed');
-                      setSelectedSettlement(null);
-                    }}
-                    className="flex-1 py-3.5 px-4 rounded-xl font-bold bg-primary-600 text-white shadow-lg shadow-primary-500/20 hover:bg-primary-700 transition-colors text-sm"
-                  >
-                    Verify Payment
-                  </button>
+              {selectedSettlement.status === 'pending' && (
+                <div className="p-4 md:p-6 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex gap-3 pb-20 md:pb-6 shrink-0 shadow-lg z-10">
+                  {((String(selectedSettlement.receiverId?._id || selectedSettlement.receiverId || '') === String(currentUser?._id || currentUser?.id || '')) || isAdmin || currentUser?.role === 'admin') && (
+                    <>
+                      <button 
+                        onClick={async () => {
+                          if (onRespond) {
+                            const res = await onRespond(selectedSettlement._id, 'dispute');
+                            if (res !== false) setSelectedSettlement(null);
+                          }
+                        }}
+                        className="flex-1 py-3 px-4 rounded-xl font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:border-rose-200 transition-colors text-sm shadow-sm cursor-pointer"
+                      >
+                        Reject
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (onRespond) {
+                            const res = await onRespond(selectedSettlement._id, 'accept');
+                            if (res !== false) setSelectedSettlement(null);
+                          }
+                        }}
+                        className="flex-1 py-3 px-4 rounded-xl font-bold bg-primary-600 text-white shadow-lg shadow-primary-500/20 hover:bg-primary-700 transition-colors text-sm cursor-pointer"
+                      >
+                        Accept & Verify
+                      </button>
+                    </>
+                  )}
+                  {String(selectedSettlement.payerId?._id || selectedSettlement.payerId || '') === String(currentUser?._id || currentUser?.id || '') && (
+                    <button 
+                      onClick={async () => {
+                        if (onRespond) {
+                          const res = await onRespond(selectedSettlement._id, 'dispute');
+                          if (res !== false) setSelectedSettlement(null);
+                        }
+                      }}
+                      className="w-full py-3 px-4 rounded-xl font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 transition-colors text-sm cursor-pointer"
+                    >
+                      Cancel Request
+                    </button>
+                  )}
                 </div>
               )}
             </motion.div>
