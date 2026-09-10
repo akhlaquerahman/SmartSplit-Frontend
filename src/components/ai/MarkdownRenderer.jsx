@@ -49,6 +49,13 @@ const CodeBlock = ({ language, codeString }) => {
 const MarkdownRenderer = ({ content }) => {
   if (!content) return <span className="animate-pulse">...</span>;
 
+  // Preprocess content: preserve single line breaks line-by-line and format bullets cleanly
+  const formattedContent = typeof content === 'string'
+    ? content
+        .replace(/\r\n/g, '\n')
+        .replace(/([^\n])\n([^\n])/g, '$1  \n$2')
+    : content;
+
   return (
     <div className="markdown-body text-gray-800 text-[15px] leading-relaxed select-text space-y-2">
       <ReactMarkdown
@@ -175,7 +182,7 @@ const MarkdownRenderer = ({ content }) => {
           }
         }}
       >
-        {content}
+        {formattedContent}
       </ReactMarkdown>
     </div>
   );
