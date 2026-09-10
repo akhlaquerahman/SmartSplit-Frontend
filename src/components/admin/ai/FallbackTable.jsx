@@ -1,11 +1,18 @@
 import React from 'react';
-import { useFallbacks } from '../../../hooks/rulesApi';
+import { useFallbacks, useDeleteFallback } from '../../../hooks/rulesApi';
 import { useRulesStore } from '../../../store/useRulesStore';
 import { Edit, Trash2, Power, PowerOff, ShieldAlert } from 'lucide-react';
 
 const FallbackTable = () => {
   const { data, isLoading } = useFallbacks({ page: 1, limit: 20 });
+  const deleteFallbackMutation = useDeleteFallback();
   const openDrawer = useRulesStore((state) => state.openDrawer);
+
+  const handleDelete = (id, name) => {
+    if (window.confirm(`Are you sure you want to delete fallback rule "${name}"?`)) {
+      deleteFallbackMutation.mutate(id);
+    }
+  };
 
   const fallbacks = data?.data || [];
 
@@ -70,7 +77,14 @@ const FallbackTable = () => {
                   <td className="p-4">{f.usageCount}</td>
                   <td className="p-4 text-right flex justify-end gap-3">
                     <button onClick={() => openDrawer('fallback', f)} className="text-gray-400 hover:text-indigo-600" title="Edit"><Edit size={16} /></button>
-                    <button className="text-gray-400 hover:text-red-600" title="Delete"><Trash2 size={16} /></button>
+                    <button 
+                      onClick={() => handleDelete(f._id, f.name)} 
+                      disabled={deleteFallbackMutation.isPending}
+                      className="text-gray-400 hover:text-red-600 disabled:opacity-50" 
+                      title="Delete"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </td>
                 </tr>
               ))

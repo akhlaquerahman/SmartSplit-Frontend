@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useGreetings } from '../../../hooks/rulesApi';
+import { useGreetings, useDeleteGreeting, useCloneGreeting } from '../../../hooks/rulesApi';
 import { useRulesStore } from '../../../store/useRulesStore';
 import { Edit, Play, Copy, Trash2, Power, PowerOff, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -20,7 +20,19 @@ const GreetingsTable = () => {
   };
 
   const { data, isLoading } = useGreetings({ page, limit, search, status });
+  const deleteGreetingMutation = useDeleteGreeting();
+  const cloneGreetingMutation = useCloneGreeting();
   const openDrawer = useRulesStore((state) => state.openDrawer);
+
+  const handleDelete = (id, name) => {
+    if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
+      deleteGreetingMutation.mutate(id);
+    }
+  };
+
+  const handleClone = (id) => {
+    cloneGreetingMutation.mutate(id);
+  };
 
   const greetings = data?.data || [];
   const total = data?.total || 0;
@@ -114,9 +126,29 @@ const GreetingsTable = () => {
                   </td>
                   <td className="p-4 font-mono text-sm text-gray-600">{g.triggerCount}</td>
                   <td className="p-4 text-right flex justify-end gap-3">
-                    <button onClick={() => openDrawer('greeting', g)} className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Edit"><Edit size={16} /></button>
-                    <button className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Clone"><Copy size={16} /></button>
-                    <button className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete"><Trash2 size={16} /></button>
+                    <button 
+                      onClick={() => openDrawer('greeting', g)} 
+                      className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors" 
+                      title="Edit"
+                    >
+                      <Edit size={16} />
+                    </button>
+                    <button 
+                      onClick={() => handleClone(g._id)} 
+                      disabled={cloneGreetingMutation.isPending}
+                      className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-50" 
+                      title="Clone"
+                    >
+                      <Copy size={16} />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(g._id, g.name)} 
+                      disabled={deleteGreetingMutation.isPending}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50" 
+                      title="Delete"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </td>
                 </tr>
               ))

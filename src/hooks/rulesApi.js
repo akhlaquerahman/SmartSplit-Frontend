@@ -1,9 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
-
-// Replace with configured Axios instance if available in the project
-const api = axios.create({ baseURL: '/api' });
-// Assume there's a token interceptor in the real app if needed.
+import api from '../utils/api';
 
 export const useDashboardStats = () => {
   return useQuery({
@@ -66,6 +62,20 @@ export const useDeleteGreeting = () => {
   });
 };
 
+export const useCloneGreeting = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id) => {
+      const { data } = await api.post(`/admin/ai/greetings/${id}/clone`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['greetings']);
+      queryClient.invalidateQueries(['ruleDashboardStats']);
+    }
+  });
+};
+
 export const useTestGreeting = () => {
   return useMutation({
     mutationFn: async (input) => {
@@ -108,6 +118,20 @@ export const useUpdateFallback = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['fallbacks']);
+    }
+  });
+};
+
+export const useDeleteFallback = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id) => {
+      const { data } = await api.delete(`/admin/ai/fallbacks/${id}`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(['fallbacks']);
+      queryClient.invalidateQueries(['ruleDashboardStats']);
     }
   });
 };
