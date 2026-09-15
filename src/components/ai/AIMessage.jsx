@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, Copy, Check, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { Bot, Copy, Check, ThumbsUp, ThumbsDown, Sparkles } from 'lucide-react';
 import ActionCard from './widgets/ActionCard';
 import ChartWidget from './widgets/ChartWidget';
 import ActionWizards from './widgets/ActionWizards';
@@ -45,20 +45,36 @@ const AIMessage = ({ content, metadata }) => {
       );
     }
 
+    // If content is empty/loading, render ChatGPT-style thinking animation
+    if (!content || content.trim() === '') {
+      return (
+        <div className="flex items-center gap-2 py-1.5 text-gray-500">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.3s]"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-bounce [animation-delay:-0.15s]"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-bounce"></span>
+          </div>
+        </div>
+      );
+    }
+
     return <MarkdownRenderer content={content} />;
   };
 
   return (
     <div className="flex gap-4">
-      <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white flex-shrink-0 mt-1 shadow-sm">
-        <Bot className="w-5 h-5" />
+      <div className="relative flex-shrink-0 mt-1">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/30 border border-white/20 select-none">
+          <span className="font-black text-xs tracking-tight" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>AI</span>
+        </div>
+        <Sparkles className="w-3 h-3 text-amber-300 absolute -top-1 -right-1 drop-shadow-sm" />
       </div>
       <div className="flex-1 space-y-2 min-w-0 overflow-hidden">
         <div className="w-full text-gray-800 leading-relaxed">
           {renderContent()}
         </div>
         
-        {content && (
+        {content && content.trim() !== '' && (
           <div className="flex items-center gap-1 pt-1.5 border-t border-gray-100 mt-2">
             <button 
               onClick={handleCopyMessage}
