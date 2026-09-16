@@ -20,9 +20,11 @@ import {
   Sun,
   Shield,
   Bell,
-  MoreVertical
+  MoreVertical,
+  CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import api from '../utils/api';
 import { cn } from '../utils/cn';
 
 const MainLayout = ({ children }) => {
@@ -33,11 +35,42 @@ const MainLayout = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showTopProfileMenu, setShowTopProfileMenu] = useState(false);
+  const [showNotificationMenu, setShowNotificationMenu] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [totalUnread, setTotalUnread] = useState(0);
+  const [unreadItems, setUnreadItems] = useState([]);
   const { theme, toggleTheme } = useTheme();
 
   const profileMenuRef = useRef(null);
   const topProfileMenuRef = useRef(null);
+  const notificationMenuRef = useRef(null);
+
+  const fetchTotalUnread = async () => {
+    try {
+      const res = await api.get('/chat/unread-counts');
+      if (res.data) {
+        if (typeof res.data.totalUnread === 'number') {
+          setTotalUnread(res.data.totalUnread);
+        }
+        if (Array.isArray(res.data.items)) {
+          setUnreadItems(res.data.items);
+        }
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchTotalUnread();
+
+    const handleUnreadEvent = () => fetchTotalUnread();
+    window.addEventListener('smartsplit_chat_unread_update', handleUnreadEvent);
+    window.addEventListener('smartsplit_chat_read_update', handleUnreadEvent);
+
+    return () => {
+      window.removeEventListener('smartsplit_chat_unread_update', handleUnreadEvent);
+      window.removeEventListener('smartsplit_chat_read_update', handleUnreadEvent);
+    };
+  }, []);
 
   // Resize listener for responsive layout
   useEffect(() => {
@@ -59,6 +92,9 @@ const MainLayout = ({ children }) => {
       }
       if (topProfileMenuRef.current && !topProfileMenuRef.current.contains(event.target)) {
         setShowTopProfileMenu(false);
+      }
+      if (notificationMenuRef.current && !notificationMenuRef.current.contains(event.target)) {
+        setShowNotificationMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -240,10 +276,131 @@ const MainLayout = ({ children }) => {
                 {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
               </button>
               
-              <button className="p-2 md:p-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400 transition-colors relative">
-                <Bell size={20} />
-                <span className="absolute top-1.5 md:top-2 right-1.5 md:right-2 w-2 h-2 md:w-2.5 md:h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-[#111111]"></span>
-              </button>
+              {/* Top Navbar Notification Bell Dropdown */}
+              <div className="relative" ref={notificationMenuRef}>
+                <button 
+                  onClick={() => setShowNotificationMenu(!showNotificationMenu)}
+                  title={totalUnread > 0 ? `${totalUnread} unread message(s)` : 'Notifications'}
+                  className="p-2 md:p-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 text-slate-500 dark:text-slate-400 transition-colors relative"
+                >
+                  <Bell size={20} />
+                  {totalUnread > 0 ? (
+                    <span className="absolute -top-0.5 -right-0.5 px-1.5 py-0.2 min-w-[18px] h-[18px] bg-rose-500 text-white text-[10px] font-black rounded-full border-2 border-white dark:border-[#111111] flex items-center justify-center animate-pulse shadow-xs">
+                      {totalUnread > 99 ? '99+' : totalUnread}
+                    </span>
+                  ) : (
+                    <span className="absolute top-1.5 md:top-2 right-1.5 md:right-2 w-2 h-2 md:w-2.5 md:h-2.5 bg-slate-300 dark:bg-slate-700 rounded-full border-2 border-white dark:border-[#111111]"></span>
+                  )}
+                </button>
+
+                <AnimatePresence>
+                  {showNotificationMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute top-full right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-white/10 shadow-2xl rounded-2xl overflow-hidden z-50"
+                    >
+                      {/* Dropdown Header */}
+                      <div className="p-3.5 px-4 border-b border-slate-100 dark:border-white/10 flex items-center justify-between bg-slate-50/60 dark:bg-slate-900/50">
+                        <div className="flex items-center gap-2">
+                          <Bell size={16} className="text-primary-500" />
+                          <span className="font-extrabold text-xs text-slate-900 dark:text-white">Notifications</span>
+                          {totalUnread > 0 && (
+                            <span className="px-1.5 py-0.2 bg-rose-500 text-white text-[9px] font-extrabold rounded-full">
+                              {totalUnread} new
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowNotificationMenu(false);
+                            navigate('/friends');
+                          }}
+                          className="text-[11px] font-extrabold text-primary-600 dark:text-primary-400 hover:underline"
+                        >
+                          Friends Chat →
+                        </button>
+                      </div>
+
+                      {/* Dropdown Body - Notification Items */}
+                      <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                        {unreadItems.length > 0 ? (
+                          unreadItems.map((item) => {
+                            const timeString = item.timestamp
+                              ? new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              : '';
+
+                            return (
+                              <div
+                                key={item.senderId}
+                                onClick={() => {
+                                  setShowNotificationMenu(false);
+                                  navigate(`/friends?activeChat=${item.senderId}`);
+                                  window.dispatchEvent(new CustomEvent('smartsplit_chat_read_update'));
+                                }}
+                                className="p-3 hover:bg-slate-50 dark:hover:bg-white/5 cursor-pointer transition-colors flex items-center gap-3 relative group"
+                              >
+                                {/* Sender Avatar */}
+                                <div className="relative shrink-0">
+                                  <img
+                                    src={item.senderAvatar}
+                                    alt={item.senderName}
+                                    className="w-10 h-10 rounded-2xl object-cover border border-slate-200 dark:border-slate-700"
+                                  />
+                                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 ring-2 ring-white dark:ring-[#1a1a1a] rounded-full" />
+                                </div>
+
+                                {/* Notification Text details */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <h4 className="font-extrabold text-xs text-slate-900 dark:text-white truncate">
+                                      {item.senderName}
+                                    </h4>
+                                    {timeString && (
+                                      <span className="text-[10px] font-bold text-slate-400 shrink-0 ml-2">
+                                        {timeString}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate font-medium">
+                                    {item.lastMessage}
+                                  </p>
+                                </div>
+
+                                {/* Unread Badge Pill */}
+                                <span className="px-2 py-0.5 bg-rose-500 text-white text-[10px] font-extrabold rounded-full shrink-0 shadow-2xs">
+                                  {item.count}
+                                </span>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="p-8 text-center flex flex-col items-center justify-center text-slate-400">
+                            <CheckCircle2 size={32} className="text-emerald-500 mb-2 opacity-80" />
+                            <p className="text-xs font-extrabold text-slate-700 dark:text-slate-300">All caught up!</p>
+                            <p className="text-[11px] font-medium text-slate-400 mt-0.5">No unread chat notifications right now.</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Dropdown Footer */}
+                      <div className="p-2.5 bg-slate-50/60 dark:bg-slate-900/50 border-t border-slate-100 dark:border-white/10 text-center">
+                        <button
+                          onClick={() => {
+                            setShowNotificationMenu(false);
+                            navigate('/friends');
+                          }}
+                          className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors w-full py-1"
+                        >
+                          Open All Chats in Friends Workspace
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
 
               <div className="hidden sm:block w-px h-6 bg-slate-200 dark:bg-white/10 mx-1 md:mx-2" />
 
