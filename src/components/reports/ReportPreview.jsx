@@ -3,29 +3,63 @@ import { FileText, Users, HandCoins, Receipt } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import Barcode from 'react-barcode';
 
+// Helper to safely resolve payer name
+const getPayerName = (expense, members) => {
+  if (expense.paidBy?.name) return expense.paidBy.name.split(' ')[0];
+  if (typeof expense.paidBy === 'string' || expense.paidBy?._id) {
+    const pId = (expense.paidBy?._id || expense.paidBy).toString();
+    const found = members?.find(m => (m.user?._id || m.user || '').toString() === pId);
+    if (found?.user?.name) return found.user.name.split(' ')[0];
+  }
+  return 'User';
+};
+
+// Helper to safely resolve participant list (who shares in this expense)
+const getParticipants = (expense, members) => {
+  if (expense.participants && expense.participants.length > 0) {
+    return expense.participants.map(p => {
+      if (typeof p === 'object' && p.name) return p;
+      const pId = (p._id || p).toString();
+      const found = members?.find(m => (m.user?._id || m.user || '').toString() === pId);
+      return found?.user || { name: 'User' };
+    }).filter(Boolean);
+  }
+  if (expense.splitDetails && expense.splitDetails.length > 0) {
+    return expense.splitDetails.map(sd => {
+      const u = sd.user;
+      if (typeof u === 'object' && u.name) return u;
+      const pId = (u?._id || u).toString();
+      const found = members?.find(m => (m.user?._id || m.user || '').toString() === pId);
+      return found?.user || { name: 'User' };
+    }).filter(Boolean);
+  }
+  return (members || []).map(m => m.user || m).filter(Boolean);
+};
+
 const ReportPreview = ({ group }) => {
   if (!group) return null;
 
   const { summary, expenses, settlements, members } = group;
 
-  // Enforce Max 8 members for preview summary
-  const memberList = (summary?.memberBalances || []).slice(0, 8);
+  const memberList = summary?.memberBalances || [];
   const totalMembers = members?.length || 0;
-  const hasMoreMembers = summary?.memberBalances?.length > 8;
-  const extraMembersCount = (summary?.memberBalances?.length || 0) - 8;
 
-  const recentExpenses = [...(expenses || [])]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 10);
+  const allExpenses = [...(expenses || [])]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     
-  const recentSettlements = [...(settlements || [])]
+  const completedSettlements = [...(settlements || [])]
     .filter(s => s.status === 'completed')
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 10);
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const reportId = `SSR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
   const verificationUrl = `https://smartsplitakhlaque.vercel.app/report/verify/${reportId}`;
   
+  // Dynamic layout calculation based on total expenses count
+  const isHighVolume = allExpenses.length > 30;
+  const gridColsClass = isHighVolume 
+    ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2" 
+    : "grid grid-cols-1 md:grid-cols-2 gap-2.5";
+
   return (
     <div className="w-full max-w-[794px] mx-auto bg-white text-slate-600 rounded-[2rem] shadow-xl shadow-slate-200/50 dark:shadow-black/20 border border-slate-200/60 dark:border-slate-800 border-t-8 border-t-primary-600 overflow-hidden relative print:hidden">
       
@@ -147,64 +181,115 @@ const ReportPreview = ({ group }) => {
           </div>
         </div>
 
-        {/* RECENT ACTIVITY SECTION */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-          {/* Expenses */}
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <Receipt size={18} className="text-primary-600" strokeWidth={2.5} />
-              <h3 className="text-base font-bold text-slate-900">Recent Expenses</h3>
+        {/* SETTLEMENTS SECTION (Compact Summary if present) */}
+        {completedSettlements.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-3">
+              <HandCoins size={18} className="text-green-600" strokeWidth={2.5} />
+              <h3 className="text-base font-bold text-slate-900">Settlements Summary</h3>
+              <span className="text-xs font-bold text-green-700 bg-green-100 px-2.5 py-0.5 rounded-full">
+                {completedSettlements.length}
+              </span>
             </div>
-            <div className="space-y-2">
-              {recentExpenses.length === 0 ? (
-                <p className="text-sm text-slate-500">No expenses recorded.</p>
-              ) : (
-                recentExpenses.map((expense, i) => (
-                  <div key={i} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 border-l-4 border-l-primary-600 shadow-sm">
-                    <div className="min-w-0 pr-4">
-                      <p className="text-sm font-semibold text-slate-900 truncate mb-1">{expense.description}</p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-primary-700 bg-primary-100 px-2 py-0.5 rounded uppercase">{expense.category}</span>
-                        <span className="text-xs text-slate-500">{new Date(expense.createdAt).toLocaleDateString()}</span>
-                      </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+              {completedSettlements.map((settlement, i) => (
+                <div key={i} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 border-l-4 border-l-green-600 shadow-xs">
+                  <div className="min-w-0 pr-2">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
+                      <span className="truncate">{settlement.payerId?.name?.split(' ')[0]}</span>
+                      <span className="text-slate-400">→</span>
+                      <span className="truncate">{settlement.receiverId?.name?.split(' ')[0]}</span>
                     </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-bold text-slate-900">₹{expense.amount.toFixed(2)}</p>
-                    </div>
+                    <p className="text-[10px] text-slate-400">{new Date(settlement.createdAt).toLocaleDateString()}</p>
                   </div>
-                ))
-              )}
+                  <p className="text-xs font-bold text-green-600 shrink-0">₹{settlement.amount.toFixed(2)}</p>
+                </div>
+              ))}
             </div>
+          </div>
+        )}
+
+        {/* ALL EXPENSES BREAKDOWN SECTION */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2">
+              <Receipt size={18} className="text-primary-600" strokeWidth={2.5} />
+              <h3 className="text-base font-bold text-slate-900">Expenses Breakdown</h3>
+              <span className="text-xs font-bold text-primary-700 bg-primary-100 px-2.5 py-0.5 rounded-full">
+                {allExpenses.length} Items
+              </span>
+            </div>
+            <span className="text-xs text-slate-400 font-medium">Detailed Payer & Split Info</span>
           </div>
 
-          {/* Settlements */}
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <HandCoins size={18} className="text-green-600" strokeWidth={2.5} />
-              <h3 className="text-base font-bold text-slate-900">Recent Settlements</h3>
-            </div>
-            <div className="space-y-2">
-              {recentSettlements.length === 0 ? (
-                <p className="text-sm text-slate-500">No settlements recorded.</p>
-              ) : (
-                recentSettlements.map((settlement, i) => (
-                  <div key={i} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 border-l-4 border-l-green-600 shadow-sm">
-                    <div className="min-w-0 pr-4">
-                      <div className="flex items-center gap-1.5 mb-1 text-sm">
-                        <span className="font-bold text-slate-900 truncate">{settlement.payerId?.name?.split(' ')[0]}</span>
-                        <span className="text-slate-500">→</span>
-                        <span className="font-bold text-slate-700 truncate">{settlement.receiverId?.name?.split(' ')[0]}</span>
+          {allExpenses.length === 0 ? (
+            <p className="text-sm text-slate-500 py-6 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              No expenses recorded in this group.
+            </p>
+          ) : (
+            <div className={gridColsClass}>
+              {allExpenses.map((expense, i) => {
+                const payerName = getPayerName(expense, members);
+                const participants = getParticipants(expense, members);
+
+                return (
+                  <div 
+                    key={expense._id || i} 
+                    className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-slate-200 border-l-4 border-l-primary-600 shadow-xs hover:border-slate-300 transition-all"
+                  >
+                    <div className="min-w-0 pr-2 flex-1">
+                      {/* Category & Description */}
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-[9px] font-bold text-primary-700 bg-primary-100 px-1.5 py-0.5 rounded uppercase shrink-0">
+                          {expense.category || 'General'}
+                        </span>
+                        <p className="text-xs font-semibold text-slate-900 truncate" title={expense.description}>
+                          {expense.description}
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-500">{new Date(settlement.createdAt).toLocaleDateString()}</p>
+
+                      {/* Payer Name & Participant Avatar Stack */}
+                      <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                        <span className="truncate">
+                          By <strong className="text-slate-800 font-semibold">{payerName}</strong>
+                        </span>
+                        <span className="text-slate-300">•</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[9px] text-slate-400">For:</span>
+                          <div className="flex items-center -space-x-1.5 overflow-hidden">
+                            {participants.slice(0, 4).map((p, pIdx) => (
+                              <img 
+                                key={pIdx}
+                                src={p.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name || 'U')}`}
+                                alt={p.name}
+                                title={`Split participant: ${p.name}`}
+                                className="inline-block h-4 w-4 rounded-full ring-1 ring-white object-cover"
+                              />
+                            ))}
+                            {participants.length > 4 && (
+                              <span className="flex items-center justify-center h-4 w-4 rounded-full bg-slate-100 text-[7px] font-bold text-slate-600 ring-1 ring-white">
+                                +{participants.length - 4}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Amount & Date */}
                     <div className="text-right shrink-0">
-                      <p className="text-sm font-bold text-green-600">₹{settlement.amount.toFixed(2)}</p>
+                      <p className="text-xs font-bold text-slate-900">
+                        ₹{expense.amount.toFixed(2)}
+                      </p>
+                      <p className="text-[9px] text-slate-400 mt-0.5">
+                        {new Date(expense.createdAt).toLocaleDateString()}
+                      </p>
                     </div>
                   </div>
-                ))
-              )}
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
 
         {/* SIGNATURE SECTION */}

@@ -24,15 +24,17 @@
     break-inside: avoid !important;
   }
 
-  /* Maintain exact A4 sizing during print */
+  /* Maintain exact A4 sizing during print while allowing multi-page overflow when needed */
   .print-container {
     width: 794px !important;
-    height: 1123px !important;
-    max-height: 1123px !important;
+    min-height: 1123px !important;
+    height: auto !important;
+    max-height: none !important;
     margin: 0 !important;
     border: none !important;
     box-shadow: none !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     position: relative !important;
   }
 }
+
