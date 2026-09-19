@@ -16,6 +16,7 @@ import {
   ChevronsRight,
   PieChart,
   User as UserIcon,
+  MessageSquare,
   Moon,
   Sun,
   Shield,
@@ -39,7 +40,22 @@ const MainLayout = ({ children }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [totalUnread, setTotalUnread] = useState(0);
   const [unreadItems, setUnreadItems] = useState([]);
+  const [hideMobileBottomNav, setHideMobileBottomNav] = useState(false);
   const { theme, toggleTheme } = useTheme();
+
+  useEffect(() => {
+    const handleToggleNav = (e) => {
+      setHideMobileBottomNav(!!e.detail?.hide);
+    };
+    window.addEventListener('smartsplit_toggle_bottom_nav', handleToggleNav);
+    return () => {
+      window.removeEventListener('smartsplit_toggle_bottom_nav', handleToggleNav);
+    };
+  }, []);
+
+  useEffect(() => {
+    setHideMobileBottomNav(false);
+  }, [location.pathname]);
 
   const profileMenuRef = useRef(null);
   const topProfileMenuRef = useRef(null);
@@ -117,7 +133,7 @@ const MainLayout = ({ children }) => {
   const menuItems = [
     { name: 'Overview', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Groups', path: '/groups', icon: Users },
-    { name: 'Friends', path: '/friends', icon: UserIcon },
+    { name: 'Chats', path: '/friends', icon: MessageSquare },
     { name: 'Analytics', path: '/reports', icon: PieChart },
     ...(user?.role === 'admin' ? [{ name: 'Admin Panel', path: '/admin/dashboard', icon: Shield }] : []),
   ];
@@ -263,7 +279,9 @@ const MainLayout = ({ children }) => {
               </div>
 
               <div className="hidden md:block">
-                 <h2 className="text-fluid-p font-semibold text-slate-800 dark:text-slate-200 capitalize tracking-wide">{location.pathname.split('/')[1] || 'Overview'}</h2>
+                 <h2 className="text-fluid-p font-semibold text-slate-800 dark:text-slate-200 capitalize tracking-wide">
+                   {location.pathname.startsWith('/friends') ? 'Chats' : (location.pathname.split('/')[1] || 'Overview')}
+                 </h2>
               </div>
             </div>
             
@@ -320,7 +338,7 @@ const MainLayout = ({ children }) => {
                           }}
                           className="text-[11px] font-extrabold text-primary-600 dark:text-primary-400 hover:underline"
                         >
-                          Friends Chat →
+                          Chats →
                         </button>
                       </div>
 
@@ -394,7 +412,7 @@ const MainLayout = ({ children }) => {
                           }}
                           className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors w-full py-1"
                         >
-                          Open All Chats in Friends Workspace
+                          Open All Chats
                         </button>
                       </div>
                     </motion.div>
@@ -452,39 +470,49 @@ const MainLayout = ({ children }) => {
           </header>
 
           {/* Page Content */}
-          <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-6 lg:p-8">
+          <main className={cn(
+            "flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-6 lg:p-8",
+            hideMobileBottomNav && "p-1.5 sm:p-3 md:p-6 lg:p-8",
+            location.pathname.startsWith('/friends') && "p-2 sm:p-3 md:p-4 lg:p-4 overflow-hidden"
+          )}>
             <div className="max-w-[1920px] mx-auto flex flex-col min-h-full">
-              <div className="flex-1 pb-16 md:pb-10">
+              <div className={cn(
+                "flex-1 pb-16 md:pb-10",
+                hideMobileBottomNav && "pb-1 md:pb-10",
+                location.pathname.startsWith('/friends') && "pb-0 md:pb-0"
+              )}>
                 {children}
               </div>
-              <Footer />
+              {!hideMobileBottomNav && !location.pathname.startsWith('/friends') && <Footer />}
             </div>
           </main>
         </div>
 
           {/* Mobile Bottom Navigation */}
-          <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-[#111111]/90 backdrop-blur-xl border-t border-slate-200 dark:border-white/10 pb-2 pt-2 px-2 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
-            <div className="flex items-center justify-around">
-              {menuItems.map((item) => {
-                const isActive = location.pathname.startsWith(item.path);
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={cn(
-                      "flex flex-col items-center justify-center p-2 rounded-xl transition-all duration-200 min-w-[64px]",
-                      isActive 
-                        ? "text-primary-600 dark:text-primary-400" 
-                        : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                    )}
-                  >
-                    <item.icon size={isActive ? 24 : 22} className={cn("mb-1 transition-all", isActive && "transform scale-110 stroke-[2.5px]")} />
-                    <span className="text-[10px] font-bold tracking-wide">{item.name}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          </nav>
+          {!hideMobileBottomNav && (
+            <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-[#111111]/90 backdrop-blur-xl border-t border-slate-200 dark:border-white/10 pb-2 pt-2 px-2 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
+              <div className="flex items-center justify-around">
+                {menuItems.map((item) => {
+                  const isActive = location.pathname.startsWith(item.path);
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={cn(
+                        "flex flex-col items-center justify-center p-2 rounded-xl transition-all duration-200 min-w-[64px]",
+                        isActive 
+                          ? "text-primary-600 dark:text-primary-400" 
+                          : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                      )}
+                    >
+                      <item.icon size={isActive ? 24 : 22} className={cn("mb-1 transition-all", isActive && "transform scale-110 stroke-[2.5px]")} />
+                      <span className="text-[10px] font-bold tracking-wide">{item.name}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </nav>
+          )}
         </div>
         
         {/* Global AI Chat Assistant */}

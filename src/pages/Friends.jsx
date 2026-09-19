@@ -252,6 +252,18 @@ const Friends = () => {
     }
   }, [activeFriendId, currentUserId]);
 
+  // Broadcast active chat state for mobile layout (hide bottom nav during direct chat)
+  useEffect(() => {
+    if (activeChatFriend) {
+      window.dispatchEvent(new CustomEvent('smartsplit_toggle_bottom_nav', { detail: { hide: true } }));
+    } else {
+      window.dispatchEvent(new CustomEvent('smartsplit_toggle_bottom_nav', { detail: { hide: false } }));
+    }
+    return () => {
+      window.dispatchEvent(new CustomEvent('smartsplit_toggle_bottom_nav', { detail: { hide: false } }));
+    };
+  }, [activeChatFriend]);
+
   // Auto-scroll chat to bottom when messages update
   useEffect(() => {
     if (chatScrollRef.current) {
@@ -521,7 +533,11 @@ const Friends = () => {
   return (
     <div className="max-w-7xl mx-auto">
       {/* WhatsApp Web Style Main 2-Column Container */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl md:rounded-[2.2rem] shadow-xl overflow-hidden h-[calc(100vh-14.5rem)] sm:h-[calc(100vh-12rem)] md:h-[calc(100vh-10.5rem)] min-h-[510px] flex">
+      <div className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden ${
+        activeChatFriend 
+          ? 'h-[calc(100vh-5rem)] sm:h-[calc(100vh-5.5rem)] md:h-[calc(100vh-6.2rem)] min-h-[460px]' 
+          : 'h-[calc(100vh-10rem)] sm:h-[calc(100vh-10.5rem)] md:h-[calc(100vh-6.2rem)] min-h-[500px]'
+      } flex transition-all duration-200`}>
 
         {/* LEFT COLUMN: CONTACTS SIDEBAR */}
         <div className={`w-full md:w-80 lg:w-96 border-r border-slate-200/80 dark:border-slate-800 flex flex-col bg-slate-50/70 dark:bg-slate-950/50 shrink-0 min-h-0 ${activeChatFriend ? 'hidden md:flex' : 'flex'
@@ -577,7 +593,7 @@ const Friends = () => {
           </div>
 
           {/* Scrollable Friends Contact List */}
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/40">
+          <div className="flex-1 overflow-y-auto no-scrollbar divide-y divide-slate-100 dark:divide-slate-800/40">
             {loading ? (
               <div className="flex flex-col items-center justify-center h-48 gap-3">
                 <Loader2 size={24} className="animate-spin text-primary-600" />
@@ -939,7 +955,7 @@ const Friends = () => {
               {/* Chat Message Scrollable Body */}
               <div
                 ref={chatScrollRef}
-                className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] dark:bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]"
+                className="flex-1 p-4 sm:p-6 overflow-y-auto no-scrollbar space-y-4 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] dark:bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]"
               >
                 <div className="flex justify-center my-1">
                   <span className="px-3 py-1 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm text-[11px] font-bold text-slate-400 dark:text-slate-500 rounded-full border border-slate-200/60 dark:border-slate-800 shadow-2xs flex items-center gap-1.5">
@@ -1142,7 +1158,7 @@ const Friends = () => {
               </div>
 
               {/* Contact Info Body */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6 text-center">
+              <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-6 text-center">
                 {/* Large Center Circular Avatar */}
                 <div className="flex flex-col items-center">
                   <div className="relative inline-block mb-4">
