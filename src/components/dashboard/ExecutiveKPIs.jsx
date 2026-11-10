@@ -35,7 +35,7 @@ const KPICard = ({ title, value, icon: Icon, color, trend, trendValue, index }) 
         )}
       </div>
       <div className="h-6 w-14 sm:h-8 sm:w-20 opacity-40 group-hover:opacity-100 transition-opacity">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 80, height: 32 }}>
           <LineChart data={mockSparklineData}>
             <Line type="monotone" dataKey="value" stroke={color.stroke} strokeWidth={2} dot={false} isAnimationActive={false} />
           </LineChart>

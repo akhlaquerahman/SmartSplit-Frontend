@@ -81,7 +81,7 @@ const ChartsWidget = ({ expenses }) => {
           <p className="text-sm text-slate-500">Your expenses over recent days</p>
         </div>
         <div className="h-[250px] sm:h-[300px] w-full mt-4">
-          <ResponsiveContainer width="100%" height="100%" className="focus:outline-none">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 300, height: 250 }} className="focus:outline-none">
             <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} style={{ outline: 'none' }}>
               <defs>
                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
@@ -117,7 +117,7 @@ const ChartsWidget = ({ expenses }) => {
               <span className="text-xl font-black text-slate-800 dark:text-white">₹{totalSpend.toFixed(0)}</span>
             </div>
           )}
-          <ResponsiveContainer width="100%" height="100%" className="focus:outline-none">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 250, height: 250 }} className="focus:outline-none">
             <PieChart style={{ outline: 'none' }}>
               <Pie
                 data={categoryData}

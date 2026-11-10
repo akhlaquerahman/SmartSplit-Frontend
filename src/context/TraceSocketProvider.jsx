@@ -1,11 +1,16 @@
 import React, { useEffect } from 'react';
 import { io } from 'socket.io-client';
 import useDebuggerStore from '../store/useDebuggerStore';
+import useAuthStore from '../store/useAuthStore';
 import api from '../utils/api';
 
 const TraceSocketProvider = ({ children }) => {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
   useEffect(() => {
-    // 1. Connect exactly once when application mounts
+    if (!isAuthenticated) return;
+
+    // 1. Connect when user is authenticated
     const socketUrl = import.meta.env.MODE === 'production' 
       ? 'https://smartsplitbackend.vercel.app' 
       : (import.meta.env.VITE_API_URL || 'http://localhost:5000');
@@ -97,12 +102,12 @@ const TraceSocketProvider = ({ children }) => {
       });
     });
 
-    // Cleanup ONLY if the provider itself is unmounted
+    // Cleanup on unmount or auth change
     return () => {
-      console.log('[TRACE-UI] Disconnecting socket (App Unmount)');
+      console.log('[TRACE-UI] Disconnecting socket');
       socket.disconnect();
     };
-  }, []);
+  }, [isAuthenticated]);
 
   return <>{children}</>;
 };

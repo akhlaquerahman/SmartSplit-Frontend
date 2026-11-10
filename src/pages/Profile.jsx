@@ -20,9 +20,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
+import { compressImageFile } from '../utils/imageCompression';
 
 const Profile = () => {
-  const { user, updateProfile, changePassword, getMe, loading, error, clearError, logout } = useAuthStore();
+  const { user, updateProfile, changePassword, getMe, loading, error, setError, clearError, logout } = useAuthStore();
   const { groups, fetchGroups } = useGroupStore();
   const navigate = useNavigate();
 
@@ -91,25 +92,38 @@ const Profile = () => {
     };
   }, [groups]);
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) { // 2MB limit
-        alert('Image is too large. Please select an image under 2MB.');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatar(reader.result);
-      };
-      reader.readAsDataURL(file);
+  const handleImageChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please select a valid image file.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) { // 5MB raw limit before client-side compression
+      setError('Image is too large. Please select an image under 5MB.');
+      return;
+    }
+
+    clearError();
+    try {
+      const optimizedDataUrl = await compressImageFile(file, { maxDimension: 512, quality: 0.85 });
+      setAvatar(optimizedDataUrl);
+    } catch {
+      setError('Failed to process the selected image. Please try another file.');
     }
   };
 
   const handleUpdate = async (e) => {
     e.preventDefault();
     setSuccess('');
-    const res = await updateProfile({ name, mobile, upiId, avatar });
+    const payload = { name, mobile, upiId };
+    if (avatar && avatar !== user?.avatar) {
+      payload.avatar = avatar;
+    }
+    const res = await updateProfile(payload);
     if (res) {
       setSuccess('Profile details saved successfully');
       setTimeout(() => setSuccess(''), 4000);
@@ -434,6 +448,7 @@ const Profile = () => {
                     <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                     <input
                       type={showCurrentPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
                       value={currentPassword}
                       onChange={(e) => setCurrentPassword(e.target.value)}
                       className="w-full pl-9 pr-10 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 rounded-xl focus:ring-1 focus:ring-primary-500 focus:bg-white focus:border-primary-500 transition-all outline-none text-xs text-slate-850 dark:text-white"
@@ -457,6 +472,7 @@ const Profile = () => {
                     <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                     <input
                       type={showNewPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       className="w-full pl-9 pr-10 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 rounded-xl focus:ring-1 focus:ring-primary-500 focus:bg-white focus:border-primary-500 transition-all outline-none text-xs text-slate-850 dark:text-white"
@@ -481,6 +497,7 @@ const Profile = () => {
                     <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                     <input
                       type={showConfirmPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       className="w-full pl-9 pr-10 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-850 rounded-xl focus:ring-1 focus:ring-primary-500 focus:bg-white focus:border-primary-500 transition-all outline-none text-xs text-slate-850 dark:text-white"

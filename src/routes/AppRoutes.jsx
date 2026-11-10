@@ -13,6 +13,7 @@ import Reports from '../pages/Reports';
 import GroupDetails from '../pages/GroupDetails';
 import Profile from '../pages/Profile';
 import Friends from '../pages/Friends';
+import TempSettlement from '../pages/TempSettlement';
 import MainLayout from '../layouts/MainLayout';
 
 // Admin imports
@@ -76,6 +77,7 @@ const AppRoutes = () => {
       <Route path="/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
       <Route path="/friends" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+      <Route path="/temp-settlement" element={<ProtectedRoute><TempSettlement /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/group/:id" element={<ProtectedRoute><GroupDetails /></ProtectedRoute>} />
       

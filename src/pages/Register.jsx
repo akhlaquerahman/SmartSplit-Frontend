@@ -122,6 +122,7 @@ const Register = () => {
               <User className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${errors.name ? 'text-red-400' : 'text-slate-400 group-focus-within:text-primary-500'}`} size={18} />
               <input
                 type="text"
+                autoComplete="name"
                 {...register("name", {
                   onChange: (e) => {
                     e.target.value = e.target.value.replace(/[^a-zA-Z\s]/g, '');
@@ -145,6 +146,7 @@ const Register = () => {
               <Mail className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${errors.email ? 'text-red-400' : 'text-slate-400 group-focus-within:text-primary-500'}`} size={18} />
               <input
                 type="email"
+                autoComplete="email"
                 {...register("email")}
                 className={`w-full pl-10 pr-4 py-3 bg-white dark:bg-[#0f1115] border ${errors.email ? 'border-red-300 dark:border-red-500/50 focus:ring-red-500/20' : 'border-slate-200 dark:border-slate-700/80 focus:border-primary-500 focus:ring-primary-500/20'} rounded-xl focus:ring-4 transition-all outline-none text-sm`}
                 placeholder="name@example.com"
@@ -164,6 +166,7 @@ const Register = () => {
               <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${errors.password ? 'text-red-400' : 'text-slate-400 group-focus-within:text-primary-500'}`} size={18} />
               <input
                 type={showPassword ? "text" : "password"}
+                autoComplete="new-password"
                 {...register("password")}
                 className={`w-full pl-10 pr-11 py-3 bg-white dark:bg-[#0f1115] border ${errors.password ? 'border-red-300 dark:border-red-500/50 focus:ring-red-500/20' : 'border-slate-200 dark:border-slate-700/80 focus:border-primary-500 focus:ring-primary-500/20'} rounded-xl focus:ring-4 transition-all outline-none text-sm`}
                 placeholder="••••••••"
@@ -203,7 +206,7 @@ const Register = () => {
             theme={theme === 'dark' ? 'filled_black' : 'outline'}
             shape="rectangular"
             size="large"
-            width="100%"
+            width={300}
             text="signup_with"
             use_fedcm_for_prompt={true}
           />

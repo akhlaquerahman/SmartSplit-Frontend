@@ -12,6 +12,8 @@ const normalizeAvatar = (user) => {
   return user;
 };
 
+let initializePromise = null;
+
 const useAuthStore = create((set, get) => ({
   user: null,
   isAuthenticated: localStorage.getItem('isAuthenticated') === 'true',
@@ -21,12 +23,20 @@ const useAuthStore = create((set, get) => ({
 
   initialize: async () => {
     if (get().isInitialized) return;
-    
-    if (localStorage.getItem('isAuthenticated') === 'true') {
-      await get().getMe();
-    }
-    
-    set({ isInitialized: true });
+    if (initializePromise) return initializePromise;
+
+    initializePromise = (async () => {
+      try {
+        if (localStorage.getItem('isAuthenticated') === 'true') {
+          await get().getMe();
+        }
+      } finally {
+        set({ isInitialized: true });
+        initializePromise = null;
+      }
+    })();
+
+    return initializePromise;
   },
 
   login: async (email, password) => {
@@ -130,12 +140,19 @@ const useAuthStore = create((set, get) => ({
   updateProfile: async (data) => {
     set({ loading: true, error: null });
     try {
-      const response = await api.put('/auth/profile', data);
+      const hasImageUpload = typeof data?.avatar === 'string' && data.avatar.startsWith('data:image');
+      const response = await api.put('/auth/profile', data, hasImageUpload ? { timeout: 60000 } : undefined);
       const userData = normalizeAvatar(response.data);
       set({ user: userData, loading: false });
       return true;
     } catch (error) {
-      set({ error: error.response?.data?.message || 'Profile update failed', loading: false });
+      const fallbackMessage =
+        error.code === 'ECONNABORTED'
+          ? 'Profile update timed out. Please try a smaller image or check your connection.'
+          : error.message && !error.response
+            ? `Network error: ${error.message}`
+            : 'Profile update failed';
+      set({ error: error.response?.data?.message || fallbackMessage, loading: false });
       return false;
     }
   },

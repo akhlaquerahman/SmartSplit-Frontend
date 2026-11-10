@@ -1,8 +1,11 @@
 import React from 'react';
-import { Plus, Download, Upload } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Compass } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const WorkspaceHeader = ({ onCreateGroup }) => {
+  const navigate = useNavigate();
+
   return (
     <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
       <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
@@ -14,7 +17,14 @@ const WorkspaceHeader = ({ onCreateGroup }) => {
         </p>
       </motion.div>
       
-      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3 shrink-0">
+      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex flex-wrap items-center gap-3 shrink-0">
+        <button
+          type="button"
+          onClick={() => navigate('/temp-settlement?new=1')}
+          className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white dark:bg-[#16181d] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider transition-all shadow-sm active:scale-95"
+        >
+          <Compass size={17} className="text-emerald-600 dark:text-emerald-400" /> Temp Settlement
+        </button>
         <button
           onClick={onCreateGroup}
           className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-5 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider transition-all shadow-lg shadow-primary-500/30 active:scale-95"

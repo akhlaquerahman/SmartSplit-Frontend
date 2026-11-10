@@ -22,7 +22,8 @@ import {
   Shield,
   Bell,
   MoreVertical,
-  CheckCircle2
+  CheckCircle2,
+  Compass
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../utils/api';
@@ -133,6 +134,7 @@ const MainLayout = ({ children }) => {
   const menuItems = [
     { name: 'Overview', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Groups', path: '/groups', icon: Users },
+    { name: 'Temp Settlement', mobileName: 'Temp', path: '/temp-settlement', icon: Compass },
     { name: 'Chats', path: '/friends', icon: MessageSquare },
     { name: 'Analytics', path: '/reports', icon: PieChart },
     ...(user?.role === 'admin' ? [{ name: 'Admin Panel', path: '/admin/dashboard', icon: Shield }] : []),
@@ -280,7 +282,11 @@ const MainLayout = ({ children }) => {
 
               <div className="hidden md:block">
                  <h2 className="text-fluid-p font-semibold text-slate-800 dark:text-slate-200 capitalize tracking-wide">
-                   {location.pathname.startsWith('/friends') ? 'Chats' : (location.pathname.split('/')[1] || 'Overview')}
+                   {location.pathname.startsWith('/friends')
+                     ? 'Chats'
+                     : location.pathname.startsWith('/temp-settlement')
+                       ? 'Temp Settlement'
+                       : (location.pathname.split('/')[1] || 'Overview')}
                  </h2>
               </div>
             </div>
@@ -499,14 +505,14 @@ const MainLayout = ({ children }) => {
                       key={item.path}
                       to={item.path}
                       className={cn(
-                        "flex flex-col items-center justify-center p-2 rounded-xl transition-all duration-200 min-w-[64px]",
+                        "flex flex-col items-center justify-center p-2 rounded-xl transition-all duration-200 min-w-0 flex-1",
                         isActive 
                           ? "text-primary-600 dark:text-primary-400" 
                           : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                       )}
                     >
-                      <item.icon size={isActive ? 24 : 22} className={cn("mb-1 transition-all", isActive && "transform scale-110 stroke-[2.5px]")} />
-                      <span className="text-[10px] font-bold tracking-wide">{item.name}</span>
+                      <item.icon size={isActive ? 22 : 20} className={cn("mb-1 transition-all", isActive && "transform scale-110 stroke-[2.5px]")} />
+                      <span className="text-[10px] font-bold tracking-wide truncate max-w-full">{item.mobileName || item.name}</span>
                     </Link>
                   );
                 })}

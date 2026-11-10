@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Receipt, CheckCircle2, Loader2, IndianRupee, Users } from 'lucide-react';
+import { Receipt, CheckCircle2, Loader2, IndianRupee, UploadCloud, X } from 'lucide-react';
 import api from '../../../utils/api';
+import { compressImageFile } from '../../../utils/imageCompression';
 
 const CATEGORIES = ['General', 'Food', 'Travel', 'Shopping', 'Bills', 'Entertainment', 'Medical'];
-const PAYMENT_METHODS = ['UPI', 'Cash'];
+const PAYMENT_METHODS = [
+  { label: 'UPI', value: 'UPI' },
+  { label: 'Cash', value: 'CASH' }
+];
 
 const AddExpenseWizard = () => {
   const [groups, setGroups] = useState([]);
@@ -19,6 +23,7 @@ const AddExpenseWizard = () => {
   const [paidBy, setPaidBy] = useState('');
   const [selectedParticipants, setSelectedParticipants] = useState([]);
   const [customSplits, setCustomSplits] = useState({}); // { userId: amount }
+  const [receipt, setReceipt] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [fetchingGroups, setFetchingGroups] = useState(true);
@@ -87,6 +92,30 @@ const AddExpenseWizard = () => {
     setCustomSplits(prev => ({ ...prev, [userId]: value }));
   };
 
+  const handleReceiptUpload = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please select a valid image file for payment proof.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Payment proof image must be under 5MB.');
+      return;
+    }
+
+    setError(null);
+    try {
+      const optimizedProof = await compressImageFile(file, { maxDimension: 1400, quality: 0.85 });
+      setReceipt(optimizedProof);
+    } catch {
+      setError('Failed to process the selected proof image.');
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
@@ -129,17 +158,22 @@ const AddExpenseWizard = () => {
 
     setLoading(true);
     try {
-      await api.post(`/expenses`, {
-        groupId: selectedGroup,
-        amount: parsedAmount,
-        description,
-        splitType: backendSplitType,
-        category,
-        paidBy,
-        paymentMethod,
-        participants: selectedParticipants,
-        splitDetails: finalSplitDetails
-      });
+      await api.post(
+        '/expenses',
+        {
+          groupId: selectedGroup,
+          amount: parsedAmount,
+          description,
+          splitType: backendSplitType,
+          category,
+          paidBy,
+          paymentMethod,
+          participants: selectedParticipants,
+          splitDetails: finalSplitDetails,
+          ...(receipt ? { receipt } : {})
+        },
+        receipt ? { timeout: 60000 } : undefined
+      );
       setSuccess(true);
       window.dispatchEvent(new Event('refreshBalances'));
     } catch (err) {
@@ -250,7 +284,7 @@ const AddExpenseWizard = () => {
               onChange={(e) => setPaymentMethod(e.target.value)}
               className="w-full text-xs p-1.5 border border-gray-200 rounded focus:ring-1 focus:ring-orange-200 focus:border-orange-500 outline-none"
             >
-              {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+              {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </div>
         </div>
@@ -316,6 +350,58 @@ const AddExpenseWizard = () => {
               })}
             </div>
           )}
+        </div>
+
+        {/* Upload Payment Proof */}
+        <div className="border-t border-gray-50 pt-2">
+          <label className="block text-[10px] font-medium text-gray-500 mb-1 uppercase tracking-wide">
+            Payment Proof
+          </label>
+          <div className="border border-dashed border-gray-200 hover:border-orange-400 rounded-lg p-2.5 text-center relative overflow-hidden group transition-colors bg-gray-50/40">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleReceiptUpload}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+            />
+            {receipt ? (
+              <div className="flex items-center justify-between gap-2 text-left">
+                <div className="flex items-center gap-2 min-w-0 pointer-events-none">
+                  <img
+                    src={receipt}
+                    alt="Receipt preview"
+                    className="w-9 h-9 rounded-md object-cover border border-gray-200 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold text-orange-600 truncate">Proof attached</p>
+                    <p className="text-[10px] text-gray-400">Click to change</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setReceipt('');
+                  }}
+                  title="Remove proof"
+                  className="relative z-20 p-1 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2 pointer-events-none py-0.5">
+                <div className="w-7 h-7 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
+                  <UploadCloud className="w-3.5 h-3.5" />
+                </div>
+                <div className="text-left">
+                  <p className="text-[11px] font-semibold text-gray-700 leading-tight">Upload payment proof</p>
+                  <p className="text-[10px] text-gray-400 leading-tight">Optional (Image max 5MB)</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {error && <p className="text-red-500 text-[10px] bg-red-50 p-1.5 rounded">{error}</p>}

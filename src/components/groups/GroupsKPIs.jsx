@@ -9,8 +9,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
-
-const formatCurrency = (amount) => `₹${Number(amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+import { formatCurrency } from '../../utils/groupFormatters';
 
 const generateMockSparkline = (trend) => {
   const data = [];
@@ -50,7 +49,7 @@ const KPICard = ({ title, value, icon: Icon, trend, trendValue, color, delay }) 
       </div>
 
       <div className="absolute bottom-0 right-0 left-0 h-16 opacity-30 pointer-events-none">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 200, height: 64 }}>
           <LineChart data={sparklineData}>
             <Line 
               type="monotone" 
