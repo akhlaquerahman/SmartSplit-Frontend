@@ -16,7 +16,6 @@ const TraceSocketProvider = ({ children }) => {
       : (import.meta.env.VITE_API_URL || 'http://localhost:5000');
       
     if (socketUrl.includes('vercel.app')) {
-      console.warn('[TRACE-UI] WebSockets are disabled on Vercel deployments. Trace UI disabled.');
       return;
     }
 
