@@ -2,7 +2,7 @@ import React from 'react';
 import { Search, Filter, SlidersHorizontal, Download, Upload, UserPlus, Mail, RotateCcw, UserCheck, ShieldAlert } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
-const UsersToolbar = ({ search, setSearch, status, setStatus, role, setRole, selectedCount, onBulkAction }) => {
+const UsersToolbar = ({ search, setSearch, status, setStatus, role, setRole, selectedCount, onBulkAction, onReset }) => {
   return (
     <div className="flex flex-col gap-4 mb-6 relative z-20">
 
@@ -82,7 +82,12 @@ const UsersToolbar = ({ search, setSearch, status, setStatus, role, setRole, sel
                 </select>
               </div>
               
-              <button className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors shrink-0" title="Reset Filters">
+              <button
+                type="button"
+                onClick={onReset}
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors shrink-0"
+                title="Reset Filters"
+              >
                 <RotateCcw size={16} />
               </button>
             </div>

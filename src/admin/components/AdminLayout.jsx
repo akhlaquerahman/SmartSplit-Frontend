@@ -147,7 +147,7 @@ const AdminLayout = ({ children }) => {
             <div className="p-1.5 bg-blue-600 rounded-lg">
               <Shield className="h-5 w-5 text-white" />
             </div>
-            <span className="font-extrabold text-lg tracking-tight">Admin Console</span>
+            <span className="font-extrabold text-lg tracking-tight">Admin Panel</span>
           </div>
           <button onClick={() => setMobileOpen(false)} className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-800">
             <X size={20} />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../utils/api';
 import UsersKPIs from '../components/UsersKPIs';
 import UsersToolbar from '../components/UsersToolbar';
@@ -26,32 +26,25 @@ const Users = () => {
   // Selection & Drawer
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [drawerUser, setDrawerUser] = useState(null);
+  const [drawerDetails, setDrawerDetails] = useState(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const activeDrawerUserIdRef = useRef(null);
   
   // Bulk Import Modal
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
 
-  useEffect(() => {
-    fetchDashboardStats();
-  }, []);
-
-  useEffect(() => {
-    fetchUsers();
-    // Reset selection when filters change
-    setSelectedUsers([]);
-  }, [search, status, role, page, limit]);
-
-  const fetchDashboardStats = async () => {
+  const fetchDashboardStats = useCallback(async () => {
     try {
       const response = await api.get(`/admin/dashboard`);
       setStats(response.data);
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
-  };
+  }, []);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -62,25 +55,60 @@ const Users = () => {
         role: role !== 'all' ? role : ''
       });
       const response = await api.get(`/admin/users?${params}`);
-      
-      // Inject dummy isOnline status for the UI demonstration
-      const enhancedUsers = response.data.users.map(u => ({
-        ...u,
-        isOnline: Math.random() > 0.7
-      }));
-      
-      setUsers(enhancedUsers);
-      setTotalPages(response.data.pages);
+      setUsers(response.data.users || []);
+      setTotalPages(response.data.pages || 1);
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, limit, search, status, role]);
+
+  useEffect(() => {
+    fetchDashboardStats();
+  }, [fetchDashboardStats]);
+
+  useEffect(() => {
+    fetchUsers();
+    // Reset selection when filters change
+    setSelectedUsers([]);
+  }, [fetchUsers]);
+
+  const fetchUserDetails = useCallback(async (userId) => {
+    if (!userId) return;
+    activeDrawerUserIdRef.current = userId;
+    setLoadingDetails(true);
+    try {
+      const response = await api.get(`/admin/users/${userId}/details`);
+      if (activeDrawerUserIdRef.current === userId) {
+        setDrawerDetails(response.data);
+        if (response.data?.user) {
+          setDrawerUser((prev) =>
+            prev && prev._id === userId ? { ...prev, ...response.data.user, activity: response.data.activity, lastLogin: response.data.lastLogin } : prev
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching user details:', error);
+    } finally {
+      if (activeDrawerUserIdRef.current === userId) {
+        setLoadingDetails(false);
+      }
+    }
+  }, []);
 
   const handleRowClick = (user) => {
     setDrawerUser(user);
+    setDrawerDetails(null);
     setIsDrawerOpen(true);
+    fetchUserDetails(user._id);
+  };
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setStatus('all');
+    setRole('all');
+    setPage(1);
   };
 
   const handleBulkAction = async (action) => {
@@ -101,18 +129,34 @@ const Users = () => {
   const handleSaveUser = async (userId, updatedData) => {
     setIsSaving(true);
     try {
-      const response = await api.put(`/admin/users/${userId}`, updatedData);
-      
-      if (updatedData.upiId !== drawerUser.upiId) {
-        await api.patch(`/admin/users/${userId}/upi`, { upiId: updatedData.upiId });
+      const hasImageUpload = typeof updatedData?.avatar === 'string' && updatedData.avatar.startsWith('data:image');
+      const { upiId, ...profilePayload } = updatedData;
+      const response = await api.put(
+        `/admin/users/${userId}`,
+        profilePayload,
+        hasImageUpload ? { timeout: 60000 } : undefined
+      );
+
+      let savedUser = response.data?.user || {};
+      const nextUpi = (upiId || '').trim();
+      const prevUpi = (drawerUser?.upiId || '').trim();
+      if (nextUpi && nextUpi !== prevUpi) {
+        const upiResponse = await api.patch(`/admin/users/${userId}/update-upi`, { upiId: nextUpi });
+        savedUser = { ...savedUser, upiId: upiResponse.data?.user?.upiId || nextUpi };
       }
 
-      // Update local state
-      setUsers(users.map(u => u._id === userId ? { ...u, ...updatedData, status: updatedData.status } : u));
-      setDrawerUser({ ...drawerUser, ...updatedData, status: updatedData.status });
+      // Update local state using the persisted user returned by the backend (e.g. uploaded Cloudinary URL)
+      setUsers((prevUsers) =>
+        prevUsers.map((u) => (u._id === userId ? { ...u, ...savedUser } : u))
+      );
+      setDrawerUser((prevDrawer) => (prevDrawer ? { ...prevDrawer, ...savedUser } : prevDrawer));
+      fetchUserDetails(userId);
+      fetchDashboardStats();
+      return true;
     } catch (error) {
       console.error('Error updating user:', error);
       alert(error.response?.data?.message || 'Failed to update user.');
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -126,30 +170,45 @@ const Users = () => {
 
       // Update local state
       const newStatus = !isCurrentlyBlocked;
-      setUsers(users.map(u => u._id === userId ? { ...u, isBlocked: newStatus, status: newStatus ? 'suspended' : 'active' } : u));
+      setUsers((prev) => prev.map((u) => (u._id === userId ? { ...u, isBlocked: newStatus, status: newStatus ? 'suspended' : 'active' } : u)));
       if (drawerUser && drawerUser._id === userId) {
-        setDrawerUser({ ...drawerUser, isBlocked: newStatus, status: newStatus ? 'suspended' : 'active' });
+        setDrawerUser((prev) => ({ ...prev, isBlocked: newStatus, status: newStatus ? 'suspended' : 'active' }));
+        setDrawerDetails((prev) =>
+          prev?.user ? { ...prev, user: { ...prev.user, isBlocked: newStatus, status: newStatus ? 'suspended' : 'active' } } : prev
+        );
       }
+      fetchDashboardStats();
     } catch (error) {
       console.error('Error updating block status:', error);
     }
   };
 
   const handleCreateUser = () => {
+    activeDrawerUserIdRef.current = null;
     setDrawerUser(null); // null indicates create mode
+    setDrawerDetails(null);
     setIsDrawerOpen(true);
   };
 
   const handleResetPassword = (userId) => {
-    // In a real application this would hit an API endpoint
+    if (!userId) return;
     alert(`A password reset link has been sent to the user's email address. (Simulated)`);
   };
 
-  const handleDeleteUser = (userId) => {
-    if (window.confirm("Are you sure you want to permanently delete this user?")) {
-      // Simulate API call to delete
-      setUsers(users.filter(u => u._id !== userId));
-      alert(`User deleted successfully. (Simulated)`);
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to deactivate this user account?')) return;
+    try {
+      await api.delete(`/admin/users/${userId}`);
+      setUsers((prev) =>
+        prev.map((u) => (u._id === userId ? { ...u, isDeleted: true, status: 'suspended', isBlocked: true } : u))
+      );
+      if (drawerUser?._id === userId) {
+        fetchUserDetails(userId);
+      }
+      fetchDashboardStats();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert(error.response?.data?.message || 'Failed to deactivate user.');
     }
   };
 
@@ -210,13 +269,14 @@ const Users = () => {
 
       <UsersToolbar 
         search={search}
-        setSearch={setSearch}
+        setSearch={(val) => { setSearch(val); setPage(1); }}
         status={status}
-        setStatus={setStatus}
+        setStatus={(val) => { setStatus(val); setPage(1); }}
         role={role}
-        setRole={setRole}
+        setRole={(val) => { setRole(val); setPage(1); }}
         selectedCount={selectedUsers.length}
         onBulkAction={handleBulkAction}
+        onReset={handleResetFilters}
       />
       
       {loading && users.length === 0 ? (
@@ -285,8 +345,13 @@ const Users = () => {
       {/* Slide-out Drawer */}
       <UserDrawer 
         isOpen={isDrawerOpen} 
-        onClose={() => setIsDrawerOpen(false)} 
+        onClose={() => {
+          activeDrawerUserIdRef.current = null;
+          setIsDrawerOpen(false);
+        }} 
         user={drawerUser}
+        userDetails={drawerDetails}
+        loadingDetails={loadingDetails}
         onSave={handleSaveUser}
         onBlock={handleBlockUser}
         isSaving={isSaving}
