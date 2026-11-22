@@ -117,9 +117,50 @@ const Users = () => {
     const confirmMsg = `Are you sure you want to ${action} ${selectedUsers.length} selected users?`;
     if (!window.confirm(confirmMsg)) return;
     
-    // For demonstration, since bulk API doesn't exist, we will just alert.
-    // In a real scenario, this would be an API call like:
-    // await api.post(`/admin/users/bulk/${action}`, { userIds: selectedUsers });
+    if (action === 'delete') {
+      try {
+        await Promise.all(selectedUsers.map((id) => api.delete(`/admin/users/${id}`)));
+        setUsers((prev) => prev.filter((u) => !selectedUsers.includes(u._id)));
+        if (drawerUser && selectedUsers.includes(drawerUser._id)) {
+          setIsDrawerOpen(false);
+          setDrawerUser(null);
+          setDrawerDetails(null);
+        }
+        setSelectedUsers([]);
+        fetchDashboardStats();
+      } catch (error) {
+        console.error('Error during bulk delete:', error);
+        alert(error.response?.data?.message || 'Failed to delete some selected users.');
+        fetchUsers();
+      }
+      return;
+    }
+
+    if (action === 'suspend') {
+      try {
+        await Promise.all(selectedUsers.map((id) => api.patch(`/admin/users/${id}/block`, { isBlocked: true })));
+        setUsers((prev) => prev.map((u) => selectedUsers.includes(u._id) ? { ...u, isBlocked: true, status: 'suspended' } : u));
+        setSelectedUsers([]);
+        fetchDashboardStats();
+      } catch (error) {
+        console.error('Error during bulk suspend:', error);
+        fetchUsers();
+      }
+      return;
+    }
+
+    if (action === 'verify') {
+      try {
+        await Promise.all(selectedUsers.map((id) => api.put(`/admin/users/${id}`, { isVerified: true })));
+        setUsers((prev) => prev.map((u) => selectedUsers.includes(u._id) ? { ...u, isVerified: true } : u));
+        setSelectedUsers([]);
+        fetchDashboardStats();
+      } catch (error) {
+        console.error('Error during bulk verify:', error);
+        fetchUsers();
+      }
+      return;
+    }
     
     alert(`Bulk ${action} executed for ${selectedUsers.length} users! (Simulated)`);
     setSelectedUsers([]);
@@ -223,19 +264,20 @@ const Users = () => {
   };
 
   const handleDeleteUser = async (userId) => {
-    if (!window.confirm('Are you sure you want to deactivate this user account?')) return;
+    if (!window.confirm('Are you sure you want to permanently delete this user? This action cannot be undone.')) return;
     try {
       await api.delete(`/admin/users/${userId}`);
-      setUsers((prev) =>
-        prev.map((u) => (u._id === userId ? { ...u, isDeleted: true, status: 'suspended', isBlocked: true } : u))
-      );
+      setUsers((prev) => prev.filter((u) => u._id !== userId));
+      setSelectedUsers((prev) => prev.filter((id) => id !== userId));
       if (drawerUser?._id === userId) {
-        fetchUserDetails(userId);
+        setIsDrawerOpen(false);
+        setDrawerUser(null);
+        setDrawerDetails(null);
       }
       fetchDashboardStats();
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert(error.response?.data?.message || 'Failed to deactivate user.');
+      alert(error.response?.data?.message || 'Failed to delete user.');
     }
   };
 
@@ -381,6 +423,7 @@ const Users = () => {
         loadingDetails={loadingDetails}
         onSave={handleSaveUser}
         onBlock={handleBlockUser}
+        onDelete={handleDeleteUser}
         isSaving={isSaving}
       />
 

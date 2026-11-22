@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   X, Mail, Phone, Calendar, Edit2, CheckCircle2, Shield, AlertTriangle, Wallet,
   Save, Camera, RotateCcw, KeyRound, Clock, Monitor, Receipt, FolderKanban, Handshake, BadgeCheck,
-  Eye, EyeOff
+  Eye, EyeOff, Trash2
 } from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../utils/cn';
@@ -32,7 +32,7 @@ const formatDevice = (login) => {
   return login.ipAddress || 'Web session';
 };
 
-const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave, onBlock, isSaving }) => {
+const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave, onBlock, onDelete, isSaving }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [avatarError, setAvatarError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -262,12 +262,22 @@ const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave
                   "flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-2",
                   user.isBlocked 
                     ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20" 
-                    : "bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20"
+                    : "bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20"
                 )}
               >
                 {user.isBlocked ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />} 
                 {user.isBlocked ? 'Restore Access' : 'Suspend Account'}
               </button>
+              {onDelete && !isCreateMode && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(user._id)}
+                  className="px-3 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/20"
+                  title="Delete User"
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              )}
             </div>
           </div>
           )}
