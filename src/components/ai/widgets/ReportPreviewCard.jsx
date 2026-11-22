@@ -83,13 +83,13 @@ const ReportPreviewCard = () => {
 
         <div className="flex gap-2 pt-2">
           <button 
-            onClick={() => navigate(`/reports?groupId=${selectedGroup}`)}
+            onClick={() => navigate(`/group/${selectedGroup}`)}
             className="flex-1 flex justify-center items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 p-2 rounded-lg text-xs font-medium transition-colors"
           >
             <Eye className="w-4 h-4" /> View
           </button>
           <button 
-            onClick={() => navigate(`/reports?groupId=${selectedGroup}&print=true`)}
+            onClick={() => navigate(`/group/${selectedGroup}`)}
             className="flex-1 flex justify-center items-center gap-2 bg-gray-50 hover:bg-gray-100 text-gray-700 p-2 rounded-lg text-xs font-medium transition-colors"
           >
             <Printer className="w-4 h-4" /> Print

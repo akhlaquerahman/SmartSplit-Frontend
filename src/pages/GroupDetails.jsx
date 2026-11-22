@@ -4,9 +4,12 @@ import { io } from 'socket.io-client';
 import useGroupStore from '../store/useGroupStore';
 import useAuthStore from '../store/useAuthStore';
 import api from '../utils/api';
-import { Plus, ChevronLeft, Receipt, HandCoins, UserPlus, Info, Image, X, UploadCloud, QrCode, MessageCircle, Edit2, Trash2, History, Calendar, AlertTriangle, FileText } from 'lucide-react';
+import { Plus, ChevronLeft, Receipt, HandCoins, UserPlus, Info, Image, X, UploadCloud, QrCode, MessageCircle, Edit2, Trash2, History, Calendar, AlertTriangle, FileText, Download, Printer } from 'lucide-react';
+import { useReactToPrint } from 'react-to-print';
 import ChatDrawer from '../components/ChatDrawer';
 import ProofViewer from '../components/ProofViewer';
+import PrintableReport from '../components/reports/PrintableReport';
+import EnterpriseGroupReport, { WhatsAppIcon } from '../components/reports/EnterpriseGroupReport';
 import GroupPaymentsTab from '../components/GroupPaymentsTab';
 import GroupSettlementsTab from '../components/GroupSettlementsTab';
 import GroupMembersTab from '../components/GroupMembersTab';
@@ -39,6 +42,14 @@ const GroupDetails = () => {
     error
   } = useGroupStore();
   const { user: currentUser } = useAuthStore();
+
+  const printReportRef = useRef(null);
+  const enterpriseReportRef = useRef(null);
+  const handlePrint = useReactToPrint({
+    contentRef: printReportRef,
+    content: () => printReportRef.current,
+    documentTitle: `SmartSplit_Report_${activeGroup?.name || 'Document'}`,
+  });
 
   // Edit Expense State Hooks
   const [showEditExpenseModal, setShowEditExpenseModal] = useState(false);
@@ -946,289 +957,111 @@ const GroupDetails = () => {
         </div>
 
         {/* ================================================= */}
-        {/* SECTION 1: Quick Actions (24px gap from header) */}
+        {/* UNIFIED ENTERPRISE REPORT & ACTION CONTROL DOCK   */}
+        {/* Exact width matching report card (max-w-[1000px]) */}
         {/* ================================================= */}
-        <div className="mt-6 flex flex-wrap items-center justify-center md:justify-start gap-1.5 md:gap-3 px-1 md:px-0">
-          {/* Primary: Add Expense */}
-          <button 
-            onClick={() => setShowExpenseModal(true)} 
-            className="h-[38px] md:h-[48px] px-2.5 md:px-5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 shadow-sm transition-all active:scale-95"
-          >
-            <Plus size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Add Expense
-          </button>
+        <div className="w-full max-w-[1000px] mx-auto mt-4 md:mt-6 px-1 md:px-0">
           
-          {/* Success: Settlement */}
-          <button 
-            onClick={() => setShowSettlementModal(true)} 
-            className="h-[38px] md:h-[48px] px-2.5 md:px-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 shadow-sm transition-all active:scale-95"
-          >
-            <QrCode size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Settle Up
-          </button>
-          
-          {/* Outline: Member */}
-          {isAdmin && (
-            <button 
-              onClick={() => setShowAddMember(true)} 
-              className="h-[38px] md:h-[48px] px-2.5 md:px-5 border-2 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 transition-all active:scale-95"
-            >
-              <UserPlus size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Add Member
-            </button>
-          )}
-
-          {/* Secondary: Report */}
-          <button 
-            onClick={() => navigate(`/reports?groupId=${activeGroup._id}`)} 
-            className="h-[38px] md:h-[48px] px-2.5 md:px-5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 transition-all active:scale-95"
-          >
-            <FileText size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Report
-          </button>
-
-          {/* Ghost: Chat */}
-          <button 
-            onClick={() => setShowChat(true)} 
-            className="h-[38px] md:h-[48px] px-2.5 md:px-5 hover:bg-slate-100 dark:hover:bg-slate-800 bg-transparent text-slate-600 dark:text-slate-300 rounded-lg md:rounded-xl text-[12px] md:text-sm font-bold flex items-center justify-center gap-1 md:gap-2 transition-all active:scale-95"
-          >
-            <MessageCircle size={16} strokeWidth={2.5} className="md:w-[18px] md:h-[18px]" /> Chat
-          </button>
-        </div>
-
-        {/* ================================================= */}
-        {/* SECTION 2: Statistics Cards (24px gap from actions) */}
-        {/* ================================================= */}
-        <div className="mt-6 grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-          
-          {/* Total Spent */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md">
-            <div className="min-w-0">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Total Spent</p>
-              <p className="text-sm md:text-xl font-extrabold mt-1.5 text-slate-800 dark:text-white truncate">
-                {formatCurrency(totalExpense)}
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="5" width="20" height="14" rx="2" />
-                <line x1="2" y1="10" x2="22" y2="10" />
-              </svg>
-            </div>
-          </div>
-
-          {/* Net Balance */}
-          <div className={`bg-white dark:bg-slate-900 rounded-2xl border ${currentMemberBalance < 0 ? 'border-rose-200 dark:border-rose-900/50' : currentMemberBalance > 0 ? 'border-emerald-200 dark:border-emerald-900/50' : 'border-slate-100 dark:border-slate-800/80'} p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md`}>
-            <div className="min-w-0">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Net Balance</p>
-              <p className={`text-sm md:text-xl font-extrabold mt-1.5 truncate ${currentMemberBalance < 0 ? 'text-rose-600 dark:text-rose-400' : currentMemberBalance > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-white'}`}>
-                {currentMemberBalance < 0 ? ' ' : currentMemberBalance > 0 ? ' ' : ''}{formatCurrency(Math.abs(currentMemberBalance))}
-              </p>
-            </div>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${currentMemberBalance < 0 ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400' : currentMemberBalance > 0 ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-              </svg>
-            </div>
-          </div>
-
-          {/* Paid by you */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md">
-            <div className="min-w-0">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Paid by you</p>
-              <p className="text-sm md:text-xl font-extrabold mt-1.5 text-emerald-600 dark:text-emerald-400 truncate">
-                {formatCurrency(currentMemberPaid)}
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="5" width="20" height="14" rx="2" />
-                <line x1="2" y1="10" x2="22" y2="10" />
-              </svg>
-            </div>
-          </div>
-
-          {/* Your Share */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md">
-            <div className="min-w-0">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Your Share</p>
-              <p className="text-sm md:text-xl font-extrabold mt-1.5 text-slate-800 dark:text-white truncate">
-                {formatCurrency(currentMemberShare)}
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-            </div>
-          </div>
-
-          {/* Members */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md">
-            <div className="min-w-0">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Members</p>
-              <p className="text-sm md:text-xl font-extrabold mt-1.5 text-slate-800 dark:text-white truncate">
-                {activeGroup.members.length}
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            </div>
-          </div>
-
-          {/* Pending */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/80 p-4 flex items-center justify-between gap-3 shadow-sm transition-all hover:shadow-md">
-            <div className="min-w-0">
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Pending</p>
-              <p className="text-sm md:text-xl font-extrabold mt-1.5 text-slate-800 dark:text-white truncate">
-                {pendingRequests.length}
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-            </div>
-          </div>
-
-        </div>
-
-        {/* ================================================= */}
-        {/* SECTION 3: Premium Navigation Tabs (32px gap) */}
-        {/* ================================================= */}
-        <div className="mt-8 sticky -top-3 md:-top-6 lg:-top-8 z-10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm pt-4 md:pt-6 lg:pt-8 pb-2 -mx-4 px-4 md:mx-0 md:px-0 border-b border-slate-200 dark:border-slate-800 transition-all duration-200">
-          <div className="flex overflow-x-auto no-scrollbar gap-1 md:gap-3 w-full">
-            {[
-              { key: 'overview', label: 'Overview', count: null },
-              { key: 'expenses', label: 'Expenses', count: expenses?.length || 0 },
-              { key: 'members', label: 'Members', count: activeGroup.members?.length || 0 },
-              { key: 'settlements', label: 'Settlements', count: settlements?.length || 0 },
-              { key: 'payments', label: 'Payments', count: expenses?.filter(e => e.category === 'Payment' || e.isPayment)?.length || 0 }
-            ].map((item) => {
-              const isActive = tab === item.key;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setTab(item.key)}
-                  className={cn(
-                    "relative h-[36px] md:h-[46px] px-2.5 md:px-5 rounded-lg md:rounded-[10px] text-[12px] md:text-[15px] font-semibold transition-all duration-200 shrink-0 flex items-center justify-center gap-1 md:gap-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900",
-                    isActive
-                      ? "bg-blue-50/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
-                      : "bg-transparent text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                  )}
-                  aria-label={`${item.label} Tab ${item.count !== null ? `with ${item.count} items` : ''}`}
-                  aria-selected={isActive}
-                  role="tab"
+          {/* Top Action Toolbar - Precision 2-Col Grid on Mobile, Flex Toolbar on Desktop */}
+          <div className="w-full bg-white dark:bg-[#16181d] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 md:p-2.5 shadow-md shadow-slate-200/50 dark:shadow-black/40 mb-3">
+            <div className="grid grid-cols-2 md:flex md:flex-row md:items-center md:justify-between gap-2 md:gap-2.5 w-full">
+              
+              {/* Left Group on Desktop: Core Financial Operations */}
+              <div className="contents md:flex md:items-center md:gap-2">
+                {/* Primary: Add Expense */}
+                <button 
+                  onClick={() => setShowExpenseModal(true)} 
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer order-1"
                 >
-                  <span>{item.label}</span>
-                  {item.count !== null && item.count > 0 && (
-                    <span className={cn(
-                      "px-1 py-0.5 rounded-md text-[9px] md:text-[10px] font-bold tracking-wide flex items-center justify-center leading-none",
-                      isActive 
-                        ? "bg-blue-100/80 text-blue-700 dark:bg-blue-800/50 dark:text-blue-300" 
-                        : "bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
-                    )}>
-                      {item.count}
-                    </span>
-                  )}
-                  
-                  {isActive && (
-                    <motion.div 
-                      layoutId="active-tab-indicator"
-                      className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-[3px] bg-blue-600 dark:bg-blue-500 rounded-t-full"
-                    />
-                  )}
+                  <Plus size={16} strokeWidth={2.5} />
+                  <span>Add Expense</span>
                 </button>
-              );
-            })}
+                
+                {/* Success: Settle Up */}
+                <button 
+                  onClick={() => setShowSettlementModal(true)} 
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer order-2"
+                >
+                  <QrCode size={16} strokeWidth={2.5} />
+                  <span>Settle Up</span>
+                </button>
+                
+                {/* Outline: Add Member (admin only) */}
+                {isAdmin && (
+                  <button 
+                    onClick={() => setShowAddMember(true)} 
+                    className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-5 md:order-3"
+                  >
+                    <UserPlus size={16} strokeWidth={2.5} />
+                    <span>Add Member</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Right Group on Desktop: Document & Collaboration Actions */}
+              <div className="contents md:flex md:items-center md:gap-2">
+                {/* Action: Download PDF */}
+                <button 
+                  onClick={handlePrint} 
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-3 md:order-4"
+                  title="Download or Print Report as PDF"
+                >
+                  <Download size={16} strokeWidth={2.5} />
+                  <span>Download PDF</span>
+                </button>
+
+                {/* Action: Share on WhatsApp */}
+                <button 
+                  onClick={() => enterpriseReportRef.current?.shareOnWhatsApp?.()} 
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs shadow-emerald-500/20 transition-all active:scale-95 cursor-pointer order-4 md:order-5"
+                  title="Generate Crystal-Clear Report Image & Share on WhatsApp"
+                >
+                  <WhatsAppIcon className="w-4 h-4 fill-current" />
+                  <span>WhatsApp</span>
+                </button>
+
+                {/* Ghost: Chat */}
+                <button 
+                  onClick={() => setShowChat(true)} 
+                  className={`${isAdmin ? 'w-full md:w-auto' : 'col-span-2 md:col-span-1 w-full md:w-auto'} h-[40px] md:h-[42px] px-2.5 md:px-4 hover:bg-slate-100 dark:hover:bg-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-6 md:order-6`}
+                  title="Open Group Chat"
+                >
+                  <MessageCircle size={16} strokeWidth={2.5} />
+                  <span>Chat</span>
+                </button>
+              </div>
+
+            </div>
           </div>
+
+          {/* ENTERPRISE GROUP FINANCIAL REPORT DASHBOARD */}
+          <EnterpriseGroupReport
+            ref={enterpriseReportRef}
+            group={activeGroup}
+            expenses={expenses || []}
+            settlements={settlements || []}
+            currentUser={currentUser}
+            isAdmin={isAdmin}
+            onEditExpense={handleShowEditExpenseModal}
+            onDeleteExpense={handleDeleteExpenseClick}
+            onViewReceipt={setViewReceiptUrl}
+            onRespondSettlement={handleRespond}
+            onOpenAddExpense={() => setShowExpenseModal(true)}
+            onOpenSettlement={() => setShowSettlementModal(true)}
+            onDownloadPdf={handlePrint}
+          />
         </div>
 
-        {/* ================================================= */}
-        {/* CONTENT (24px gap from tabs) */}
-        {/* ================================================= */}
-        <div className="mt-6">
-        {tab === 'overview' && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <GroupOverviewTab 
-              group={activeGroup}
-              expenses={expenses || []}
-              settlements={settlements || []}
-              currentUser={currentUser}
-              onAddExpense={() => setShowExpenseModal(true)}
-              onAddSettlement={() => setShowSettlementModal(true)}
-              onAddMember={() => setShowAddMember(true)}
-            />
-          </motion.div>
-        )}
-
-        {tab === 'expenses' && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <GroupExpensesTab 
-              group={activeGroup}
-              expenses={sortedExpenses}
-              settlements={settlements || []}
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              onAddExpense={() => setShowExpenseModal(true)}
-              onEditExpense={handleShowEditExpenseModal}
-              onDeleteExpense={handleDeleteExpenseClick}
-              onViewReceipt={setViewReceiptUrl}
-              onViewHistory={handleShowExpenseHistory}
-              expenseEditHistoryList={expenseEditHistoryList}
-              loadingHistory={loadingHistory}
-            />
-          </motion.div>
-        )}
-
-        {tab === 'members' && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <GroupMembersTab 
-              group={activeGroup}
-              memberSummaries={memberSummaries}
-              expenses={expenses || []}
-              settlements={settlements || []}
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              onInviteMember={() => setShowAddMember(true)}
-              onRemoveMember={(member) => setRemovingMember(member)}
-            />
-          </motion.div>
-        )}
-
-        {tab === 'settlements' && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <GroupSettlementsTab 
-              group={activeGroup}
-              settlements={settlements}
-              currentUser={currentUser}
-              isAdmin={isAdmin}
-              onNewRequest={() => setShowSettlementModal(true)}
-              onRespond={handleRespond}
-              onDelete={async (id) => {
-                if (window.confirm('Are you sure you want to delete this settlement?')) {
-                  try {
-                    await api.delete(`/settlements/${id}`);
-                    fetchGroupDetails(activeGroup._id);
-                  } catch (err) {
-                    console.error('Error deleting settlement:', err);
-                    alert('Failed to delete settlement');
-                  }
-                }
-              }}
-            />
-          </motion.div>
-        )}
-
-        {tab === 'payments' && (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-            <GroupPaymentsTab groupId={activeGroup._id} groupMembers={activeGroup.members} />
-          </motion.div>
-        )}
+        {/* Hidden Printable Report strictly for PDF generation */}
+        <div style={{ display: 'none' }}>
+          <PrintableReport
+            ref={printReportRef}
+            group={{
+              ...activeGroup,
+              expenses: expenses || activeGroup?.expenses || [],
+              settlements: settlements || activeGroup?.settlements || []
+            }}
+          />
         </div>
       </div>
 

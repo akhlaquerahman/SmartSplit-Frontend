@@ -14,7 +14,6 @@ import {
   X,
   ChevronsLeft,
   ChevronsRight,
-  PieChart,
   User as UserIcon,
   MessageSquare,
   Moon,
@@ -136,7 +135,6 @@ const MainLayout = ({ children }) => {
     { name: 'Groups', path: '/groups', icon: Users },
     { name: 'Temp Settlement', mobileName: 'Temp', path: '/temp-settlement', icon: Compass },
     { name: 'Chats', path: '/friends', icon: MessageSquare },
-    { name: 'Analytics', path: '/reports', icon: PieChart },
     ...(user?.role === 'admin' ? [{ name: 'Admin Panel', path: '/admin/dashboard', icon: Shield }] : []),
   ];
 
