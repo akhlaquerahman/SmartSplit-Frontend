@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import {
   X, Mail, Phone, Calendar, Edit2, CheckCircle2, Shield, AlertTriangle, Wallet,
-  Save, Camera, RotateCcw, KeyRound, Clock, Monitor, Receipt, FolderKanban, Handshake, BadgeCheck
+  Save, Camera, RotateCcw, KeyRound, Clock, Monitor, Receipt, FolderKanban, Handshake, BadgeCheck,
+  Eye, EyeOff
 } from 'lucide-react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../utils/cn';
@@ -34,14 +35,17 @@ const formatDevice = (login) => {
 const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave, onBlock, isSaving }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [avatarError, setAvatarError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   
   // Edit State
   const [editForm, setEditForm] = useState({
     name: '',
     email: '',
+    password: '',
     mobile: '',
     role: 'user',
     status: 'active',
+    isVerified: true,
     upiId: '',
     avatar: '',
   });
@@ -51,9 +55,11 @@ const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave
   const getInitialForm = (targetUser) => ({
     name: targetUser?.name || '',
     email: targetUser?.email || '',
+    password: '',
     mobile: targetUser?.mobile || targetUser?.mobileNumber || '',
     role: targetUser?.role || 'user',
     status: targetUser?.status || (targetUser?.isBlocked ? 'suspended' : 'active'),
+    isVerified: targetUser?.isVerified ?? true,
     upiId: targetUser?.upiId || '',
     avatar: targetUser?.avatar || targetUser?.profilePicture || '',
   });
@@ -61,6 +67,7 @@ const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave
   React.useEffect(() => {
     if (isOpen) {
       setAvatarError('');
+      setShowPassword(false);
       if (isCreateMode) {
         setIsEditing(true);
         setEditForm(getInitialForm(null));
@@ -110,8 +117,11 @@ const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave
   const handleSave = async () => {
     const originalAvatar = user?.avatar || user?.profilePicture || '';
     const payload = { ...editForm };
-    if (payload.avatar === originalAvatar) {
+    if (!isCreateMode && payload.avatar === originalAvatar) {
       delete payload.avatar;
+    }
+    if (!isCreateMode) {
+      delete payload.password;
     }
 
     const result = await onSave(isCreateMode ? 'new' : user._id, payload);
@@ -490,7 +500,14 @@ const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave
               </div>
             ) : (
               /* Edit Form */
-              <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <form
+                id="admin-user-drawer-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSave();
+                }}
+                className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300"
+              >
                 <input
                   id="admin-user-avatar-upload"
                   type="file"
@@ -501,7 +518,9 @@ const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave
                 <div className="bg-blue-50 dark:bg-blue-500/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-500/20 mb-6 flex items-start gap-3">
                   <Shield size={16} className="text-blue-500 mt-0.5 shrink-0" />
                   <p className="text-xs font-medium text-blue-800 dark:text-blue-300">
-                    You are editing this user's core profile. Changes made here will take effect immediately across the platform.
+                    {isCreateMode
+                      ? 'Fill in the user details below to create a new workspace account.'
+                      : "You are editing this user's core profile. Changes made here will take effect immediately across the platform."}
                   </p>
                 </div>
 
@@ -515,7 +534,7 @@ const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">
-                        {editForm.avatar?.startsWith('data:image') ? 'New photo selected (ready to save)' : 'Upload a new profile picture'}
+                        {editForm.avatar?.startsWith('data:image') ? 'New photo selected (ready to save)' : (isCreateMode ? 'Add a profile picture (optional)' : 'Upload a new profile picture')}
                       </p>
                       <p className="text-[11px] text-slate-400">PNG, JPG or WEBP up to 5MB</p>
                     </div>
@@ -532,26 +551,63 @@ const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Full Name</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
+                    Full Name <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="text"
                     name="name"
+                    required
+                    placeholder="e.g. Jane Doe"
                     value={editForm.name}
                     onChange={handleEditChange}
-                    className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 transition-all placeholder:text-slate-400"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Email Address</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
+                    Email Address <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="email"
                     name="email"
+                    required
+                    placeholder="user@example.com"
                     value={editForm.email}
                     onChange={handleEditChange}
-                    className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 transition-all placeholder:text-slate-400"
                   />
                 </div>
+
+                {isCreateMode && (
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">
+                      Account Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        name="password"
+                        value={editForm.password}
+                        onChange={handleEditChange}
+                        placeholder="Min 6 chars (leave blank to auto-generate)"
+                        className="w-full pl-4 pr-11 py-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm font-medium text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/20 transition-all placeholder:text-slate-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                        title={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    <p className="mt-1 ml-1 text-[10px] text-slate-400 font-medium">
+                      Optional: A secure temporary password will be generated automatically if left blank.
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Phone Number</label>
@@ -603,7 +659,25 @@ const UserDrawer = ({ user, userDetails, loadingDetails, isOpen, onClose, onSave
                     </select>
                   </div>
                 </div>
-              </div>
+
+                {isCreateMode && (
+                  <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <div>
+                      <p className="text-xs font-bold text-slate-800 dark:text-white">Email Verification</p>
+                      <p className="text-[11px] text-slate-400">Mark account as email-verified immediately</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editForm.isVerified)}
+                        onChange={(e) => setEditForm({ ...editForm, isVerified: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+                    </label>
+                  </div>
+                )}
+              </form>
             )}
           </div>
 

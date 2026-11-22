@@ -129,33 +129,60 @@ const Users = () => {
   const handleSaveUser = async (userId, updatedData) => {
     setIsSaving(true);
     try {
+      const isNew = userId === 'new' || !userId;
       const hasImageUpload = typeof updatedData?.avatar === 'string' && updatedData.avatar.startsWith('data:image');
       const { upiId, ...profilePayload } = updatedData;
-      const response = await api.put(
-        `/admin/users/${userId}`,
-        profilePayload,
-        hasImageUpload ? { timeout: 60000 } : undefined
-      );
-
-      let savedUser = response.data?.user || {};
-      const nextUpi = (upiId || '').trim();
-      const prevUpi = (drawerUser?.upiId || '').trim();
-      if (nextUpi && nextUpi !== prevUpi) {
-        const upiResponse = await api.patch(`/admin/users/${userId}/update-upi`, { upiId: nextUpi });
-        savedUser = { ...savedUser, upiId: upiResponse.data?.user?.upiId || nextUpi };
+      
+      let response;
+      if (isNew) {
+        response = await api.post(
+          '/admin/users',
+          { ...profilePayload, upiId },
+          hasImageUpload ? { timeout: 60000 } : undefined
+        );
+      } else {
+        response = await api.put(
+          `/admin/users/${userId}`,
+          profilePayload,
+          hasImageUpload ? { timeout: 60000 } : undefined
+        );
       }
 
-      // Update local state using the persisted user returned by the backend (e.g. uploaded Cloudinary URL)
-      setUsers((prevUsers) =>
-        prevUsers.map((u) => (u._id === userId ? { ...u, ...savedUser } : u))
-      );
-      setDrawerUser((prevDrawer) => (prevDrawer ? { ...prevDrawer, ...savedUser } : prevDrawer));
-      fetchUserDetails(userId);
-      fetchDashboardStats();
+      let savedUser = response.data?.user || {};
+
+      if (!isNew) {
+        const nextUpi = (upiId || '').trim();
+        const prevUpi = (drawerUser?.upiId || '').trim();
+        if (nextUpi && nextUpi !== prevUpi) {
+          const upiResponse = await api.patch(`/admin/users/${userId}/update-upi`, { upiId: nextUpi });
+          savedUser = { ...savedUser, upiId: upiResponse.data?.user?.upiId || nextUpi };
+        }
+      }
+
+      if (isNew) {
+        setUsers((prevUsers) => [savedUser, ...prevUsers]);
+        setIsDrawerOpen(false);
+        setDrawerUser(null);
+        setDrawerDetails(null);
+        fetchDashboardStats();
+        if (response.data?.tempPassword) {
+          alert(`User "${savedUser.name}" created successfully!\n\nTemporary Password: ${response.data.tempPassword}\nPlease share this with the user.`);
+        } else {
+          alert(`User "${savedUser.name}" created successfully!`);
+        }
+      } else {
+        // Update local state using the persisted user returned by the backend (e.g. uploaded Cloudinary URL)
+        setUsers((prevUsers) =>
+          prevUsers.map((u) => (u._id === userId ? { ...u, ...savedUser } : u))
+        );
+        setDrawerUser((prevDrawer) => (prevDrawer ? { ...prevDrawer, ...savedUser } : prevDrawer));
+        fetchUserDetails(userId);
+        fetchDashboardStats();
+      }
       return true;
     } catch (error) {
-      console.error('Error updating user:', error);
-      alert(error.response?.data?.message || 'Failed to update user.');
+      console.error('Error saving user:', error);
+      alert(error.response?.data?.message || 'Failed to save user.');
       return false;
     } finally {
       setIsSaving(false);
