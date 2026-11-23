@@ -1732,30 +1732,21 @@ var parseColorFallback = function (value) {
                 var c = document.createElement('canvas');
                 c.width = 1;
                 c.height = 1;
-                _colorFallbackCtx = c.getContext('2d');
+                _colorFallbackCtx = c.getContext('2d', { willReadFrequently: true });
             }
             var argsStr = serializeColorTokens(value.values);
             var cssStr = (value.name || 'rgb') + '(' + argsStr + ')';
-            _colorFallbackCtx.fillStyle = '#00000000';
+            _colorFallbackCtx.clearRect(0, 0, 1, 1);
+            _colorFallbackCtx.fillStyle = '#1e293b';
             _colorFallbackCtx.fillStyle = cssStr;
-            var computed = _colorFallbackCtx.fillStyle;
-            if (computed && computed.indexOf('#') === 0) {
-                var hex = computed.substring(1);
-                if (hex.length === 6) {
-                    return pack(parseInt(hex.substring(0, 2), 16), parseInt(hex.substring(2, 4), 16), parseInt(hex.substring(4, 6), 16), 1);
-                }
-                if (hex.length === 8) {
-                    return pack(parseInt(hex.substring(0, 2), 16), parseInt(hex.substring(2, 4), 16), parseInt(hex.substring(4, 6), 16), parseInt(hex.substring(6, 8), 16) / 255);
-                }
-            } else if (computed && (computed.indexOf('rgba') === 0 || computed.indexOf('rgb') === 0)) {
-                var match = computed.match(/[\d.]+/g);
-                if (match && match.length >= 3) {
-                    return pack(parseFloat(match[0]), parseFloat(match[1]), parseFloat(match[2]), match[3] ? parseFloat(match[3]) : 1);
-                }
+            _colorFallbackCtx.fillRect(0, 0, 1, 1);
+            var px = _colorFallbackCtx.getImageData(0, 0, 1, 1).data;
+            if (px[3] > 0) {
+                return pack(px[0], px[1], px[2], px[3] / 255);
             }
         }
     } catch (e) {}
-    return 0;
+    return pack(30, 41, 59, 1);
 };
 
 var color$1 = {
@@ -1797,7 +1788,11 @@ var color$1 = {
             }
         }
         if (value.type === 20 /* IDENT_TOKEN */) {
-            var namedColor = COLORS[value.value.toUpperCase()];
+            var valUpper = (value.value || '').toUpperCase();
+            if (valUpper === 'CURRENTCOLOR' || valUpper === 'INHERIT') {
+                return pack(30, 41, 59, 1);
+            }
+            var namedColor = COLORS[valUpper];
             if (typeof namedColor !== 'undefined') {
                 return namedColor;
             }
@@ -1887,7 +1882,11 @@ var SUPPORTED_COLOR_FUNCTIONS = {
     color: function(_ctx, args) { return parseColorFallback({ name: 'color', values: args }); }
 };
 var parseColor = function (context, value) {
-    return color$1.parse(context, Parser.create(value).parseComponentValue());
+    try {
+        return color$1.parse(context, Parser.create(value).parseComponentValue());
+    } catch (_e) {
+        return pack(30, 41, 59, 1);
+    }
 };
 var COLORS = {
     ALICEBLUE: 0xf0f8ffff,

@@ -29,7 +29,12 @@ import {
   Check,
   Copy,
   Share2,
-  ExternalLink
+  ExternalLink,
+  Phone,
+  Mail,
+  User,
+  PhoneCall,
+  QrCode
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import Barcode from 'react-barcode';
@@ -126,9 +131,40 @@ const EnterpriseGroupReport = React.forwardRef(({
   const [whatsappModalData, setWhatsappModalData] = useState(null);
   const [copiedSuccess, setCopiedSuccess] = useState(false);
 
+  // Member Details Modal State
+  const [selectedMemberDetail, setSelectedMemberDetail] = useState(null);
+  const [memberDrawerTab, setMemberDrawerTab] = useState('overview'); // 'overview' | 'expenses' | 'settlements'
+  const [copiedField, setCopiedField] = useState(null);
+
+  const handleCopyText = (text, fieldName) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldName);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
   const { summary, members = [] } = group;
   const memberList = summary?.memberBalances || [];
   const totalMembers = members?.length || 0;
+
+  const handleOpenMemberDetail = (target) => {
+    if (!target) return;
+    let m = null;
+    let rec = null;
+    const targetId = (target?._id || target?.user?._id || target?.user || target || '').toString();
+
+    m = members.find(mem => (mem.user?._id || mem.user || '').toString() === targetId);
+    rec = memberList.find(r => (r.user?._id || r.user || '').toString() === targetId);
+
+    if (m || rec || target?.name || target?.user?.name) {
+      setSelectedMemberDetail({
+        member: m || (target?.user ? target : { user: target }),
+        record: rec || { totalPaid: 0, totalShare: 0, netBalance: 0 }
+      });
+      setMemberDrawerTab('overview');
+      setCopiedField(null);
+    }
+  };
 
   // Report identifier
   const reportId = useMemo(() => {
@@ -146,6 +182,62 @@ const EnterpriseGroupReport = React.forwardRef(({
   }, [memberList, currentUser]);
 
   const currentBalance = currentMemberRecord?.netBalance ?? 0;
+
+  // Active Member Profile Data for Modal
+  const modalUserData = useMemo(() => {
+    if (!selectedMemberDetail) return null;
+    const user = selectedMemberDetail.member?.user || selectedMemberDetail.record?.user || {};
+    const member = selectedMemberDetail.member;
+    const record = selectedMemberDetail.record;
+    const userId = (user?._id || user || '').toString();
+
+    const name = user?.name || 'User';
+    const avatar = user?.avatar || user?.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
+    const email = user?.email || '';
+    const mobile = user?.mobile || user?.mobileNumber || user?.phone || '';
+    const upiId = user?.upiId || '';
+    const role = member?.role || (group?.createdBy?._id === userId ? 'admin' : 'member');
+    const joinedAt = member?.joinedAt || user?.createdAt || group?.createdAt;
+    const isMe = currentUser?._id && userId === currentUser._id.toString();
+
+    const totalPaid = Number(record?.totalPaid || 0);
+    const totalShare = Number(record?.totalShare || 0);
+    const netBalance = Number(record?.netBalance || 0);
+
+    // Filter user expenses in this group
+    const userExpenses = (expenses || []).filter(e => {
+      const pId = (e.paidBy?._id || e.paidBy || '').toString();
+      const aId = (e.addedBy?._id || e.addedBy || '').toString();
+      const isPart = (e.participants || []).some(p => (p._id || p || '').toString() === userId) ||
+        (e.splitDetails || []).some(s => (s.user?._id || s.user || '').toString() === userId);
+      return pId === userId || aId === userId || isPart;
+    });
+
+    // Filter user settlements in this group
+    const userSettlements = (settlements || []).filter(s => {
+      const payer = (s.payerId?._id || s.payerId || '').toString();
+      const receiver = (s.receiverId?._id || s.receiverId || '').toString();
+      return payer === userId || receiver === userId;
+    });
+
+    return {
+      userId,
+      user,
+      name,
+      avatar,
+      email,
+      mobile,
+      upiId,
+      role,
+      joinedAt,
+      isMe,
+      totalPaid,
+      totalShare,
+      netBalance,
+      userExpenses,
+      userSettlements
+    };
+  }, [selectedMemberDetail, expenses, settlements, group, currentUser]);
 
   // Categorize settlements
   const pendingSettlements = useMemo(() => {
@@ -275,21 +367,73 @@ const EnterpriseGroupReport = React.forwardRef(({
         backgroundColor: '#FFFFFF',
         logging: false,
         imageTimeout: 10000,
+        windowWidth: 1200,
+        windowHeight: 1800,
         onclone: (clonedDoc) => {
-          // Hide interactive buttons and filter controls from the generated image
+          // 1. Completely strip dark mode from cloned document so text remains dark slate on white
+          clonedDoc.documentElement.classList.remove('dark');
+          clonedDoc.body.classList.remove('dark');
+          clonedDoc.querySelectorAll('.dark').forEach((el) => {
+            el.classList.remove('dark');
+          });
+
+          // 2. Hide interactive buttons and filter controls from the generated image
           clonedDoc.querySelectorAll('[data-hide-on-export]').forEach((el) => {
             el.style.display = 'none';
           });
 
-          // Ensure pristine white background and high-contrast text
+          // 3. Force official desktop sheet width (1000px) and clean styling regardless of device viewport
           const clonedCard = clonedDoc.querySelector('[data-report-card]');
           if (clonedCard) {
+            clonedCard.classList.remove('dark');
+            clonedCard.style.width = '1000px';
+            clonedCard.style.minWidth = '1000px';
+            clonedCard.style.maxWidth = '1000px';
+            clonedCard.style.margin = '0 auto';
             clonedCard.style.backgroundColor = '#FFFFFF';
-            clonedCard.style.color = '#1E293B';
+            clonedCard.style.color = '#0F172A';
             clonedCard.style.boxShadow = 'none';
+            clonedCard.style.borderRadius = '24px';
           }
 
-          // Convert any external avatar images to crisp inline data-URL canvas circles to guarantee zero CORS/taint
+          // 4. Pre-convert all computed oklch styles to explicit inline rgb/rgba
+          const canvasHelper = document.createElement('canvas');
+          canvasHelper.width = 1;
+          canvasHelper.height = 1;
+          const helperCtx = canvasHelper.getContext('2d', { willReadFrequently: true });
+          const toRgb = (cStr, fallback = '#1e293b') => {
+            if (!cStr || cStr === 'transparent' || cStr === 'rgba(0, 0, 0, 0)') return 'transparent';
+            try {
+              helperCtx.clearRect(0, 0, 1, 1);
+              helperCtx.fillStyle = fallback;
+              helperCtx.fillStyle = cStr;
+              helperCtx.fillRect(0, 0, 1, 1);
+              const [r, g, b, a] = helperCtx.getImageData(0, 0, 1, 1).data;
+              if (a === 0) return 'transparent';
+              return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
+            } catch {
+              return fallback;
+            }
+          };
+
+          if (clonedCard) {
+            clonedCard.querySelectorAll('*').forEach((el) => {
+              try {
+                const comp = window.getComputedStyle(el);
+                if (comp.color && comp.color.includes('oklch')) {
+                  el.style.color = toRgb(comp.color, '#0f172a');
+                }
+                if (comp.backgroundColor && comp.backgroundColor.includes('oklch')) {
+                  el.style.backgroundColor = toRgb(comp.backgroundColor, '#ffffff');
+                }
+                if (comp.borderColor && comp.borderColor.includes('oklch')) {
+                  el.style.borderColor = toRgb(comp.borderColor, '#e2e8f0');
+                }
+              } catch (e) {}
+            });
+          }
+
+          // 5. Convert any external avatar images to crisp inline data-URL canvas circles to guarantee zero CORS/taint
           clonedDoc.querySelectorAll('img').forEach((img) => {
             try {
               if (img.src && !img.src.startsWith('data:')) {
@@ -464,119 +608,107 @@ const EnterpriseGroupReport = React.forwardRef(({
           </h1>
         </div>
 
-        <div className="relative z-10 p-3.5 sm:p-5 md:p-8 flex flex-col h-full">
+        <div className="relative z-10 p-2 sm:p-5 md:p-8 flex flex-col h-full">
 
-          {/* 1. REPORT HEADER */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200 dark:border-slate-800">
-            {/* Top row on mobile: Brand on left, QR on right */}
-            <div className="flex items-center justify-between w-full sm:w-auto">
-              <div className="flex gap-2.5 sm:gap-3.5 items-center">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-primary-50 dark:bg-primary-950/40 rounded-xl sm:rounded-2xl border border-primary-200 dark:border-primary-800/60 flex items-center justify-center shrink-0 shadow-xs">
-                  <FileText size={20} className="text-primary-600 dark:text-primary-400 sm:w-6 sm:h-6" strokeWidth={2.5} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <h1 className="text-lg sm:text-xl font-black tracking-tight text-slate-900 dark:text-white">SmartSplit</h1>
-                    <span className="text-[9px] sm:text-[10px] font-extrabold uppercase px-1.5 sm:px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
-                      Enterprise
-                    </span>
-                  </div>
-                  <p className="text-[10px] sm:text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                    Official Financial Statement
-                  </p>
-                </div>
+          {/* 1. REPORT HEADER - ALWAYS SINGLE HORIZONTAL ROW LIKE DESKTOP */}
+          <div className="flex flex-row items-center justify-between gap-1.5 sm:gap-4 pb-3 sm:pb-5 border-b border-slate-200 dark:border-slate-800">
+            {/* Left Brand */}
+            <div className="flex gap-1.5 sm:gap-3.5 items-center shrink-0">
+              <div className="w-7 h-7 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-primary-50 dark:bg-primary-950/40 rounded-lg sm:rounded-2xl border border-primary-200 dark:border-primary-800/60 flex items-center justify-center shrink-0 shadow-xs">
+                <FileText size={16} className="text-primary-600 dark:text-primary-400 sm:w-5 sm:h-5 md:w-6 md:h-6" strokeWidth={2.5} />
               </div>
-
-              {/* Mobile QR Code */}
-              <div className="sm:hidden flex flex-col items-end shrink-0">
-                <div className="p-1 bg-white rounded-lg border border-slate-200 dark:border-slate-700 shadow-xs">
-                  <QRCodeSVG value={verificationUrl} size={36} level="M" />
+              <div>
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <h1 className="text-xs sm:text-lg md:text-xl font-black tracking-tight text-slate-900 dark:text-white">SmartSplit</h1>
+                  <span className="text-[7px] sm:text-[9px] md:text-[10px] font-extrabold uppercase px-1 sm:px-2 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">
+                    Enterprise
+                  </span>
                 </div>
-                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
-                  Verify
-                </span>
+                <p className="text-[7px] sm:text-[10px] md:text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Official Financial Statement
+                </p>
               </div>
             </div>
 
             {/* Center Title & Verified Badge */}
-            <div className="flex flex-col sm:items-center justify-center text-left sm:text-center">
-              <h2 className="text-base sm:text-lg md:text-xl font-black text-slate-900 dark:text-white uppercase tracking-wider">
+            <div className="flex flex-col items-center justify-center text-center px-1">
+              <h2 className="text-[10px] sm:text-base md:text-xl font-black text-slate-900 dark:text-white uppercase tracking-wider">
                 Group Financial Report
               </h2>
-              <div className="flex items-center sm:justify-center gap-2 mt-0.5 sm:mt-1">
-                <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  <ShieldCheck size={12} strokeWidth={2.5} /> Verified Audit
+              <div className="flex items-center justify-center gap-1 mt-0.5 sm:mt-1">
+                <span className="inline-flex items-center gap-0.5 sm:gap-1 text-[7px] sm:text-[10px] md:text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 px-1.5 sm:px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  <ShieldCheck size={10} className="sm:w-3 sm:h-3" strokeWidth={2.5} /> Verified Audit
                 </span>
               </div>
             </div>
 
-            {/* Desktop QR Code */}
-            <div className="hidden sm:flex flex-col items-end shrink-0 self-center">
-              <div className="p-1.5 bg-white rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
-                <QRCodeSVG value={verificationUrl} size={48} level="M" />
+            {/* Right: Verification QR Code */}
+            <div className="flex flex-col items-end shrink-0">
+              <div className="p-0.5 sm:p-1 md:p-1.5 bg-white rounded-md sm:rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs">
+                <QRCodeSVG value={verificationUrl} size={30} className="sm:w-[40px] sm:h-[40px] md:w-[48px] md:h-[48px]" level="M" />
               </div>
-              <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mt-1 text-center">
-                Scan to verify
+              <span className="text-[7px] sm:text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mt-0.5 text-center">
+                Verify
               </span>
             </div>
           </div>
 
-          {/* 2. METADATA BAR */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-3.5 md:p-4 my-6 text-xs gap-3">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-6">
-              <p>
+          {/* 2. METADATA BAR - ALWAYS HORIZONTAL ROW */}
+          <div className="flex flex-row justify-between items-center bg-slate-50 dark:bg-slate-900/60 rounded-lg sm:rounded-2xl border border-slate-200/80 dark:border-slate-800 p-2 sm:p-3.5 md:p-4 my-2.5 sm:my-4 md:my-6 text-[8px] sm:text-xs gap-1.5 sm:gap-4 overflow-x-auto">
+            <div className="flex flex-row items-center gap-2 sm:gap-6 shrink-0">
+              <p className="truncate max-w-[120px] sm:max-w-none">
                 <span className="text-slate-400 font-semibold">Group:</span>{' '}
-                <span className="text-slate-900 dark:text-white font-bold ml-1">{group.name}</span>
+                <span className="text-slate-900 dark:text-white font-bold ml-0.5 sm:ml-1">{group.name}</span>
               </p>
-              <p>
+              <p className="hidden xs:inline-block">
                 <span className="text-slate-400 font-semibold">Report ID:</span>{' '}
-                <span className="text-slate-900 dark:text-white font-mono font-bold ml-1">{reportId}</span>
+                <span className="text-slate-900 dark:text-white font-mono font-bold ml-0.5 sm:ml-1 text-[7px] sm:text-xs">{reportId}</span>
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-4 text-xs">
+            <div className="flex items-center gap-2 sm:gap-4 shrink-0 text-[8px] sm:text-xs">
               <p>
                 <span className="text-slate-400 font-semibold">Date:</span>{' '}
-                <span className="text-slate-800 dark:text-slate-200 font-bold ml-1">
+                <span className="text-slate-800 dark:text-slate-200 font-bold ml-0.5 sm:ml-1">
                   {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </span>
               </p>
-              <p>
+              <p className="hidden sm:inline-block">
                 <span className="text-slate-400 font-semibold">Currency:</span>{' '}
                 <span className="text-slate-800 dark:text-slate-200 font-bold ml-1">INR (₹)</span>
               </p>
               <p>
                 <span className="text-slate-400 font-semibold">Status:</span>{' '}
-                <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-1 uppercase">ACTIVE</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-0.5 sm:ml-1 uppercase">ACTIVE</span>
               </p>
             </div>
           </div>
 
-          {/* 3. KPI FINANCIAL SUMMARY CARDS */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
-            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 border-t-4 border-t-primary-600 shadow-xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Total Expenses</p>
-              <p className="text-xl md:text-2xl font-black text-slate-900 dark:text-white truncate">
+          {/* 3. KPI FINANCIAL SUMMARY CARDS - ALWAYS 4 COLUMNS LIKE DESKTOP */}
+          <div className="grid grid-cols-4 gap-1 sm:gap-2.5 md:gap-4 mb-2.5 sm:mb-6">
+            <div className="p-1.5 sm:p-3 md:p-4 bg-white dark:bg-slate-900 rounded-lg sm:rounded-2xl border border-slate-200 dark:border-slate-800 border-t-2 sm:border-t-4 border-t-primary-600 shadow-xs">
+              <p className="text-[7px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5 sm:mb-1 truncate">Total Expenses</p>
+              <p className="text-[10px] sm:text-lg md:text-2xl font-black text-slate-900 dark:text-white truncate">
                 ₹{Number(summary?.totalExpense || 0).toFixed(2)}
               </p>
             </div>
 
-            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 border-t-4 border-t-indigo-500 shadow-xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Total Members</p>
-              <p className="text-xl md:text-2xl font-black text-slate-900 dark:text-white truncate">
+            <div className="p-1.5 sm:p-3 md:p-4 bg-white dark:bg-slate-900 rounded-lg sm:rounded-2xl border border-slate-200 dark:border-slate-800 border-t-2 sm:border-t-4 border-t-indigo-500 shadow-xs">
+              <p className="text-[7px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5 sm:mb-1 truncate">Total Members</p>
+              <p className="text-[10px] sm:text-lg md:text-2xl font-black text-slate-900 dark:text-white truncate">
                 {totalMembers}
               </p>
             </div>
 
-            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 border-t-4 border-t-emerald-500 shadow-xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Settled Amount</p>
-              <p className="text-xl md:text-2xl font-black text-emerald-600 dark:text-emerald-400 truncate">
+            <div className="p-1.5 sm:p-3 md:p-4 bg-white dark:bg-slate-900 rounded-lg sm:rounded-2xl border border-slate-200 dark:border-slate-800 border-t-2 sm:border-t-4 border-t-emerald-500 shadow-xs">
+              <p className="text-[7px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5 sm:mb-1 truncate">Settled Amount</p>
+              <p className="text-[10px] sm:text-lg md:text-2xl font-black text-emerald-600 dark:text-emerald-400 truncate">
                 ₹{totalSettledAmount.toFixed(2)}
               </p>
             </div>
 
-            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 border-t-4 border-t-amber-500 shadow-xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Pending Dues</p>
-              <p className="text-xl md:text-2xl font-black text-amber-600 dark:text-amber-400 truncate">
+            <div className="p-1.5 sm:p-3 md:p-4 bg-white dark:bg-slate-900 rounded-lg sm:rounded-2xl border border-slate-200 dark:border-slate-800 border-t-2 sm:border-t-4 border-t-amber-500 shadow-xs">
+              <p className="text-[7px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5 sm:mb-1 truncate">Pending Dues</p>
+              <p className="text-[10px] sm:text-lg md:text-2xl font-black text-amber-600 dark:text-amber-400 truncate">
                 ₹{Number(summary?.totalOwed || 0).toFixed(2)}
               </p>
             </div>
@@ -584,27 +716,27 @@ const EnterpriseGroupReport = React.forwardRef(({
 
           {/* User Financial Position Strip */}
           {currentMemberRecord && (
-            <div className={`mb-8 p-4 rounded-2xl border flex flex-wrap items-center justify-between gap-3 ${
+            <div className={`mb-3 sm:mb-8 p-2 sm:p-4 rounded-xl sm:rounded-2xl border flex flex-row items-center justify-between gap-2 ${
               currentBalance > 0 
                 ? 'bg-emerald-50/70 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300'
                 : currentBalance < 0 
                 ? 'bg-rose-50/70 border-rose-200 dark:bg-rose-950/20 dark:border-rose-900/50 text-rose-800 dark:text-rose-300'
                 : 'bg-slate-50 border-slate-200 dark:bg-slate-900 dark:border-slate-800 text-slate-700 dark:text-slate-300'
             }`}>
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm ${
+              <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
+                <div className={`w-6 h-6 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center font-bold text-xs sm:text-sm shrink-0 ${
                   currentBalance > 0 ? 'bg-emerald-600 text-white' : currentBalance < 0 ? 'bg-rose-600 text-white' : 'bg-slate-600 text-white'
                 }`}>
                   ₹
                 </div>
-                <div>
-                  <p className="text-xs font-extrabold uppercase tracking-wide">Your Net Standing</p>
-                  <p className="text-sm font-semibold">
+                <div className="min-w-0">
+                  <p className="text-[8px] sm:text-xs font-extrabold uppercase tracking-wide">Your Net Standing</p>
+                  <p className="text-[9px] sm:text-sm font-semibold truncate">
                     {currentBalance > 0 
-                      ? `You are owed a total of ₹${currentBalance.toFixed(2)} in this group.`
+                      ? `You are owed ₹${currentBalance.toFixed(2)} in this group.`
                       : currentBalance < 0 
-                      ? `You owe a total of ₹${Math.abs(currentBalance).toFixed(2)} to other members.`
-                      : 'You are completely settled up! No pending dues.'}
+                      ? `You owe ₹${Math.abs(currentBalance).toFixed(2)} to members.`
+                      : 'You are completely settled up!'}
                   </p>
                 </div>
               </div>
@@ -614,34 +746,34 @@ const EnterpriseGroupReport = React.forwardRef(({
                   type="button"
                   data-hide-on-export="true"
                   onClick={onOpenSettlement}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                  className="px-2 sm:px-4 py-1 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer shrink-0"
                 >
-                  Settle Up Now
+                  Settle Up
                 </button>
               )}
             </div>
           )}
 
           {/* 4. MEMBER FINANCIAL SUMMARY TABLE */}
-          <div className="mb-8 w-full">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <div className="flex items-center gap-2">
-                <Users size={18} className="text-primary-600 dark:text-primary-400" strokeWidth={2.5} />
-                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Member Financial Summary</h3>
+          <div className="mb-4 sm:mb-8 w-full">
+            <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <Users size={16} className="text-primary-600 dark:text-primary-400 sm:w-5 sm:h-5" strokeWidth={2.5} />
+                <h3 className="text-xs sm:text-base font-extrabold text-slate-900 dark:text-white">Member Financial Summary</h3>
               </div>
-              <span className="text-xs text-slate-400 font-medium">{members.length} Total Members</span>
+              <span className="text-[9px] sm:text-xs text-slate-400 font-medium">{members.length} Total Members</span>
             </div>
 
-            <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs">
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl sm:rounded-2xl overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[550px]">
+                <table className="w-full text-left border-collapse min-w-full">
                   <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-900/80 text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
-                      <th className="py-3 px-4 w-12 text-center">#</th>
-                      <th className="py-3 px-4">Member Name</th>
-                      <th className="py-3 px-4 text-right">Paid</th>
-                      <th className="py-3 px-4 text-right">Share</th>
-                      <th className="py-3 px-4 text-right">Balance</th>
+                    <tr className="bg-slate-50 dark:bg-slate-900/80 text-slate-500 dark:text-slate-400 text-[8px] sm:text-[11px] font-bold uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
+                      <th className="py-2 px-1.5 sm:py-3 sm:px-4 w-7 sm:w-12 text-center">#</th>
+                      <th className="py-2 px-1.5 sm:py-3 sm:px-4">Member Name</th>
+                      <th className="py-2 px-1.5 sm:py-3 sm:px-4 text-right">Paid</th>
+                      <th className="py-2 px-1.5 sm:py-3 sm:px-4 text-right">Share</th>
+                      <th className="py-2 px-1.5 sm:py-3 sm:px-4 text-right">Balance</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-[#16181d]">
@@ -652,41 +784,49 @@ const EnterpriseGroupReport = React.forwardRef(({
                       const isMe = currentUser?._id && memberId === currentUser._id.toString();
 
                       return (
-                        <tr key={idx} className="hover:bg-slate-50/80 dark:hover:bg-slate-900/40 transition-colors">
-                          <td className="py-3 px-4 text-center">
+                        <tr 
+                          key={idx} 
+                          onClick={() => handleOpenMemberDetail(member || { user: record.user })}
+                          className="hover:bg-primary-50/70 dark:hover:bg-primary-950/30 transition-all cursor-pointer group"
+                          title="Click to view full member profile, contact & financial details"
+                        >
+                          <td className="py-1.5 px-1 sm:py-3 sm:px-4 text-center">
                             <img
                               src={member?.user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(member?.user?.name || 'User')}`}
-                              className="w-8 h-8 rounded-full object-cover shrink-0 border-2 border-primary-100 dark:border-slate-700 mx-auto"
+                              className="w-5 h-5 sm:w-8 sm:h-8 rounded-full object-cover shrink-0 border sm:border-2 border-primary-100 dark:border-slate-700 mx-auto group-hover:scale-110 transition-transform"
                               alt="avatar"
                             />
                           </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-slate-900 dark:text-white">
+                          <td className="py-1.5 px-1.5 sm:py-3 sm:px-4 min-w-0">
+                            <div className="flex items-center gap-1 sm:gap-2">
+                              <span className="font-bold text-[9px] sm:text-sm text-slate-900 dark:text-white truncate max-w-[90px] sm:max-w-none group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
                                 {member?.user?.name || record.user?.name || 'Unknown User'}
                               </span>
                               {isMe && (
-                                <span className="px-1.5 py-0.5 bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 rounded text-[10px] font-bold">
+                                <span className="px-1 py-0.2 sm:px-1.5 sm:py-0.5 bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 rounded text-[7px] sm:text-[10px] font-bold shrink-0">
                                   You
                                 </span>
                               )}
                               {member?.role === 'admin' && (
-                                <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 rounded text-[10px] font-bold">
+                                <span className="px-1 py-0.2 sm:px-1.5 sm:py-0.5 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 rounded text-[7px] sm:text-[10px] font-bold shrink-0">
                                   Admin
                                 </span>
                               )}
+                              <span className="text-[7px] sm:text-[9px] font-bold text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-950/40 px-1 py-0.2 rounded border border-primary-200 dark:border-primary-800 opacity-0 group-hover:opacity-100 transition-opacity hidden xs:inline-flex items-center gap-0.5">
+                                <Info size={10} /> Details
+                              </span>
                             </div>
-                            <div className="text-xs text-slate-400">{member?.user?.email || record.user?.email}</div>
+                            <div className="text-[7px] sm:text-xs text-slate-400 hidden xs:block truncate max-w-[110px] sm:max-w-none">{member?.user?.email || record.user?.email}</div>
                           </td>
-                          <td className="py-3 px-4 text-right font-semibold text-sm text-slate-700 dark:text-slate-300">
+                          <td className="py-1.5 px-1.5 sm:py-3 sm:px-4 text-right font-semibold text-[8px] sm:text-sm text-slate-700 dark:text-slate-300 whitespace-nowrap">
                             ₹{Number(record.totalPaid || 0).toFixed(2)}
                           </td>
-                          <td className="py-3 px-4 text-right font-semibold text-sm text-slate-700 dark:text-slate-300">
+                          <td className="py-1.5 px-1.5 sm:py-3 sm:px-4 text-right font-semibold text-[8px] sm:text-sm text-slate-700 dark:text-slate-300 whitespace-nowrap">
                             ₹{Number(record.totalShare || 0).toFixed(2)}
                           </td>
-                          <td className="py-3 px-4 text-right">
+                          <td className="py-1.5 px-1.5 sm:py-3 sm:px-4 text-right">
                             <span
-                              className={`inline-block font-extrabold text-xs px-3 py-1 rounded-full ${
+                              className={`inline-block font-extrabold text-[7px] sm:text-xs px-1.5 py-0.5 sm:px-3 sm:py-1 rounded-full whitespace-nowrap ${
                                 balance > 0
                                   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
                                   : balance < 0
@@ -707,13 +847,13 @@ const EnterpriseGroupReport = React.forwardRef(({
           </div>
 
           {/* 5. SETTLEMENTS & SETTLEMENT REQUESTS SECTION */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <div className="flex items-center gap-2">
-                <HandCoins size={18} className="text-emerald-600 dark:text-emerald-400" strokeWidth={2.5} />
-                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Settlements & Requests</h3>
+          <div className="mb-4 sm:mb-8">
+            <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <HandCoins size={16} className="text-emerald-600 dark:text-emerald-400 sm:w-5 sm:h-5" strokeWidth={2.5} />
+                <h3 className="text-xs sm:text-base font-extrabold text-slate-900 dark:text-white">Settlements & Requests</h3>
                 {pendingSettlements.length > 0 && (
-                  <span className="text-xs font-bold text-amber-700 bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300 px-2 py-0.5 rounded-full animate-pulse">
+                  <span className="text-[8px] sm:text-xs font-bold text-amber-700 bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300 px-1.5 sm:px-2 py-0.5 rounded-full animate-pulse">
                     {pendingSettlements.length} Pending
                   </span>
                 )}
@@ -722,19 +862,19 @@ const EnterpriseGroupReport = React.forwardRef(({
                 type="button"
                 data-hide-on-export="true"
                 onClick={onOpenSettlement}
-                className="text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 flex items-center gap-1 hover:underline cursor-pointer"
+                className="text-[9px] sm:text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 flex items-center gap-1 hover:underline cursor-pointer"
               >
-                <Plus size={14} /> New Settlement
+                <Plus size={12} className="sm:w-3.5 sm:h-3.5" /> New Settlement
               </button>
             </div>
 
             {/* A. Pending Settlement Requests */}
             {pendingSettlements.length > 0 && (
-              <div className="mb-4 space-y-2.5">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <div className="mb-3 sm:mb-4 space-y-2">
+                <p className="text-[9px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Action Required / Pending Requests
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-3">
                   {pendingSettlements.map((s) => {
                     const payerIdStr = (s.payerId?._id || s.payerId || '').toString();
                     const receiverIdStr = (s.receiverId?._id || s.receiverId || '').toString();
@@ -754,32 +894,32 @@ const EnterpriseGroupReport = React.forwardRef(({
                       <div
                         key={s._id}
                         onClick={() => setSelectedSettlement(s)}
-                        className="bg-amber-50/60 dark:bg-amber-950/20 border-2 border-amber-300/80 dark:border-amber-800/80 rounded-2xl p-3.5 shadow-sm transition-all hover:border-amber-400 cursor-pointer"
+                        className="bg-amber-50/60 dark:bg-amber-950/20 border-2 border-amber-300/80 dark:border-amber-800/80 rounded-xl sm:rounded-2xl p-2.5 sm:p-3.5 shadow-sm transition-all hover:border-amber-400 cursor-pointer"
                       >
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                        <div className="flex items-start justify-between gap-2 mb-1.5 sm:mb-2">
+                          <div className="flex items-center gap-1 sm:gap-2">
+                            <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500 animate-ping" />
+                            <span className="text-[9px] sm:text-[11px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-300">
                               Settlement Request
                             </span>
                           </div>
-                          <span className="text-base font-black text-slate-900 dark:text-white">
+                          <span className="text-xs sm:text-base font-black text-slate-900 dark:text-white">
                             ₹{Number(s.amount || 0).toFixed(2)}
                           </span>
                         </div>
 
                         {/* Payer -> Receiver */}
-                        <div className="flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 p-2 rounded-xl border border-amber-200/60 dark:border-amber-900/40 text-xs mb-3">
+                        <div className="flex items-center gap-1.5 sm:gap-2 bg-white/80 dark:bg-slate-900/80 p-1.5 sm:p-2 rounded-lg sm:rounded-xl border border-amber-200/60 dark:border-amber-900/40 text-[9px] sm:text-xs mb-2 sm:mb-3">
                           <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{payerName}</span>
                           <span className="text-slate-400">→</span>
                           <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{receiverName}</span>
-                          <span className="text-[10px] text-slate-400 ml-auto shrink-0 font-medium">
+                          <span className="text-[8px] sm:text-[10px] text-slate-400 ml-auto shrink-0 font-medium">
                             {new Date(s.createdAt).toLocaleDateString()}
                           </span>
                         </div>
 
                         {s.note && (
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mb-3 line-clamp-1">
+                          <p className="text-[9px] sm:text-[11px] text-slate-500 dark:text-slate-400 italic mb-2 sm:mb-3 line-clamp-1">
                             "{s.note}"
                           </p>
                         )}
@@ -787,18 +927,18 @@ const EnterpriseGroupReport = React.forwardRef(({
                         {/* Interactive Buttons */}
                         <div 
                           data-hide-on-export="true"
-                          className="flex items-center justify-between gap-2 pt-1 border-t border-amber-200/40 dark:border-amber-900/30"
+                          className="flex items-center justify-between gap-1.5 sm:gap-2 pt-1 border-t border-amber-200/40 dark:border-amber-900/30"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">
+                          <span className="text-[8px] sm:text-[10px] font-bold text-slate-500 uppercase">
                             Method: {s.paymentType || 'UPI'}
                           </span>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 sm:gap-2">
                             <button
                               type="button"
                               onClick={() => setSelectedSettlement(s)}
-                              className="px-2.5 py-1 text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg transition-all"
+                              className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[9px] sm:text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg transition-all"
                               title="View full settlement details"
                             >
                               Details
@@ -810,7 +950,7 @@ const EnterpriseGroupReport = React.forwardRef(({
                                   type="button"
                                   disabled={isProcessing}
                                   onClick={() => handleSettlementAction(s._id, 'dispute')}
-                                  className="px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                                  className="px-2 sm:px-3 py-1 sm:py-1.5 text-[9px] sm:text-xs font-bold text-rose-700 bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300 dark:border-rose-800 rounded-lg sm:rounded-xl transition-all cursor-pointer disabled:opacity-50"
                                 >
                                   Reject
                                 </button>
@@ -818,9 +958,9 @@ const EnterpriseGroupReport = React.forwardRef(({
                                   type="button"
                                   disabled={isProcessing}
                                   onClick={() => handleSettlementAction(s._id, 'accept')}
-                                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                                  className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 text-[9px] sm:text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg sm:rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
                                 >
-                                  {isProcessing ? 'Processing...' : 'Accept & Settle'}
+                                  {isProcessing ? 'Processing...' : 'Accept'}
                                 </button>
                               </>
                             )}
@@ -830,7 +970,7 @@ const EnterpriseGroupReport = React.forwardRef(({
                                 type="button"
                                 disabled={isProcessing}
                                 onClick={() => handleSettlementAction(s._id, 'dispute')}
-                                className="px-2.5 py-1 text-[11px] font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 rounded-lg transition-all"
+                                className="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[8px] sm:text-[11px] font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 rounded-lg transition-all"
                               >
                                 Cancel
                               </button>
@@ -844,31 +984,35 @@ const EnterpriseGroupReport = React.forwardRef(({
               </div>
             )}
 
-            {/* B. Completed Settlements History Cards */}
+            {/* B. Completed Settlements History Cards - ALWAYS 3 COLUMNS LIKE DESKTOP */}
             {completedSettlements.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-3 gap-1 sm:gap-2.5">
                 {completedSettlements.map((settlement, i) => (
                   <div
                     key={settlement._id || i}
                     onClick={() => setSelectedSettlement(settlement)}
-                    className="flex justify-between items-center bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 border-l-4 border-l-emerald-600 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm transition-all cursor-pointer group"
+                    className="flex justify-between items-center bg-white dark:bg-slate-900 p-1.5 sm:p-3 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-800 border-l-2 sm:border-l-4 border-l-emerald-600 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm transition-all cursor-pointer group"
                     title="Click to view full settlement details"
                   >
-                    <div className="min-w-0 pr-2">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
-                        <span className="truncate">{settlement.payerId?.name?.split(' ')[0]}</span>
-                        <span className="text-slate-400">→</span>
-                        <span className="truncate">{settlement.receiverId?.name?.split(' ')[0]}</span>
+                    <div className="min-w-0 pr-1 sm:pr-2">
+                      <div className="flex items-center gap-0.5 sm:gap-1.5 text-[7px] sm:text-xs font-bold text-slate-800 dark:text-slate-200">
+                        <span className="truncate">
+                          {settlement.payerId?.name?.split(' ')[0]}
+                        </span>
+                        <span className="text-slate-400 text-[6px] sm:text-xs">→</span>
+                        <span className="truncate">
+                          {settlement.receiverId?.name?.split(' ')[0]}
+                        </span>
                       </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
+                      <p className="text-[6px] sm:text-[10px] text-slate-400 mt-0.5 truncate">
                         {new Date(settlement.createdAt).toLocaleDateString()} • {settlement.paymentType || 'UPI'}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                      <p className="text-[7px] sm:text-xs font-black text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                         ₹{Number(settlement.amount || 0).toFixed(2)}
                       </p>
-                      <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.2 rounded-full">
+                      <span className="text-[6px] sm:text-[9px] font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300 px-1 py-0.2 rounded-full hidden xs:inline-block">
                         Completed
                       </span>
                     </div>
@@ -883,12 +1027,12 @@ const EnterpriseGroupReport = React.forwardRef(({
           </div>
 
           {/* 6. EXPENSES BREAKDOWN SECTION WITH QUICK EDIT / DELETE / DETAILS / EDITED BADGE */}
-          <div className="mb-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-              <div className="flex items-center gap-2">
-                <Receipt size={18} className="text-primary-600 dark:text-primary-400" strokeWidth={2.5} />
-                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Expenses Breakdown</h3>
-                <span className="text-xs font-bold text-primary-700 bg-primary-100 dark:bg-primary-950 dark:text-primary-300 px-2.5 py-0.5 rounded-full">
+          <div className="mb-4 sm:mb-8">
+            <div className="flex flex-row items-center justify-between gap-2 mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <Receipt size={16} className="text-primary-600 dark:text-primary-400 sm:w-5 sm:h-5" strokeWidth={2.5} />
+                <h3 className="text-xs sm:text-base font-extrabold text-slate-900 dark:text-white">Expenses Breakdown</h3>
+                <span className="text-[8px] sm:text-xs font-bold text-primary-700 bg-primary-100 dark:bg-primary-950 dark:text-primary-300 px-1.5 sm:px-2.5 py-0.5 rounded-full">
                   {filteredExpenses.length} of {expenses.length}
                 </span>
               </div>
@@ -896,32 +1040,32 @@ const EnterpriseGroupReport = React.forwardRef(({
                 type="button"
                 data-hide-on-export="true"
                 onClick={onOpenAddExpense}
-                className="text-xs font-bold text-primary-600 hover:text-primary-700 dark:text-primary-400 flex items-center gap-1 hover:underline cursor-pointer self-start sm:self-auto"
+                className="text-[9px] sm:text-xs font-bold text-primary-600 hover:text-primary-700 dark:text-primary-400 flex items-center gap-1 hover:underline cursor-pointer shrink-0"
               >
-                <Plus size={14} /> Add New Expense
+                <Plus size={12} className="sm:w-3.5 sm:h-3.5" /> Add New Expense
               </button>
             </div>
 
             {/* Filter and Search Bar */}
             <div 
               data-hide-on-export="true"
-              className="bg-slate-50 dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 mb-4 flex flex-wrap items-center gap-2.5"
+              className="bg-slate-50 dark:bg-slate-900/60 p-1.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800 mb-2.5 sm:mb-4 flex flex-wrap items-center gap-1.5 sm:gap-2.5"
             >
-              <div className="relative flex-1 min-w-[180px]">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <div className="relative flex-1 min-w-[140px] sm:min-w-[180px]">
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 sm:w-3.5 sm:h-3.5" />
                 <input
                   type="text"
                   placeholder="Search description, payer..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none focus:border-primary-500"
+                  className="w-full pl-7 sm:pl-8 pr-2 sm:pr-3 py-1 sm:py-1.5 text-[9px] sm:text-xs bg-white dark:bg-slate-800 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none focus:border-primary-500"
                 />
               </div>
 
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
+                className="px-1.5 sm:px-2.5 py-1 sm:py-1.5 text-[8px] sm:text-xs bg-white dark:bg-slate-800 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
               >
                 <option value="all">All Categories</option>
                 {categories.map((c) => (
@@ -934,7 +1078,7 @@ const EnterpriseGroupReport = React.forwardRef(({
               <select
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value)}
-                className="px-2.5 py-1.5 text-xs bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
+                className="px-1.5 sm:px-2.5 py-1 sm:py-1.5 text-[8px] sm:text-xs bg-white dark:bg-slate-800 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
               >
                 <option value="newest">Newest First</option>
                 <option value="oldest">Oldest First</option>
@@ -950,14 +1094,14 @@ const EnterpriseGroupReport = React.forwardRef(({
                     setCategoryFilter('all');
                     setSortOrder('newest');
                   }}
-                  className="text-[11px] font-bold text-primary-600 dark:text-primary-400 hover:underline px-1 cursor-pointer"
+                  className="text-[9px] sm:text-[11px] font-bold text-primary-600 dark:text-primary-400 hover:underline px-1 cursor-pointer"
                 >
                   Reset
                 </button>
               )}
             </div>
 
-            {/* Expense Cards Grid */}
+            {/* Expense Cards Grid - ALWAYS 3 COLUMNS LIKE DESKTOP */}
             {filteredExpenses.length === 0 ? (
               <p className="text-xs text-slate-400 py-8 text-center bg-slate-50 dark:bg-slate-900/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
                 {expenses.length === 0
@@ -965,7 +1109,7 @@ const EnterpriseGroupReport = React.forwardRef(({
                   : 'No expenses match your search or filter.'}
               </p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-3 gap-1 sm:gap-2 md:gap-2.5">
                 {filteredExpenses.map((expense) => {
                   const payerName = getPayerName(expense, members);
                   const participants = getParticipants(expense, members);
@@ -985,13 +1129,13 @@ const EnterpriseGroupReport = React.forwardRef(({
                     <div
                       key={expense._id}
                       onClick={() => handleOpenExpenseDetails(expense)}
-                      className="group flex flex-col justify-between bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 border-l-4 border-l-primary-600 shadow-xs hover:border-primary-400 dark:hover:border-primary-500 transition-all hover:shadow-md cursor-pointer"
+                      className="group flex flex-col justify-between bg-white dark:bg-slate-900 p-1.5 sm:p-3 rounded-lg sm:rounded-2xl border border-slate-200 dark:border-slate-800 border-l-2 sm:border-l-4 border-l-primary-600 shadow-xs hover:border-primary-400 dark:hover:border-primary-500 transition-all hover:shadow-md cursor-pointer"
                       title="Click to view full expense breakdown & proof"
                     >
                       {/* Top: Category & Amount & Edited Badge */}
-                      <div className="flex items-start justify-between gap-2 mb-1.5">
-                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                          <span className="text-[9px] font-extrabold text-primary-700 bg-primary-100 dark:bg-primary-950 dark:text-primary-300 px-1.5 py-0.5 rounded uppercase shrink-0">
+                      <div className="flex items-start justify-between gap-1 mb-1 sm:mb-1.5">
+                        <div className="flex items-center gap-0.5 sm:gap-1.5 min-w-0 flex-wrap">
+                          <span className="text-[6px] sm:text-[9px] font-extrabold text-primary-700 bg-primary-100 dark:bg-primary-950 dark:text-primary-300 px-1 py-0.2 sm:py-0.5 rounded uppercase shrink-0">
                             {expense.category || 'General'}
                           </span>
                           
@@ -1000,31 +1144,31 @@ const EnterpriseGroupReport = React.forwardRef(({
                             <button
                               type="button"
                               onClick={(e) => handleOpenExpenseHistory(expense, e)}
-                              className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900/60 px-1.5 py-0.5 rounded-md border border-amber-300/80 dark:border-amber-800/80 transition-colors shadow-2xs cursor-pointer"
+                              className="inline-flex items-center gap-0.5 sm:gap-1 text-[6px] sm:text-[9px] font-black uppercase tracking-wider text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900/60 px-1 py-0.2 sm:py-0.5 rounded border border-amber-300/80 dark:border-amber-800/80 transition-colors shadow-2xs cursor-pointer"
                               title="Expense was edited • Click to view change history"
                             >
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                              <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-amber-500 animate-pulse" />
                               Edited
                             </button>
                           )}
 
                           <p
-                            className="text-xs font-bold text-slate-900 dark:text-white truncate"
+                            className="text-[8px] sm:text-xs font-bold text-slate-900 dark:text-white truncate"
                             title={expense.description}
                           >
                             {expense.description}
                           </p>
                         </div>
-                        <span className="text-xs font-black text-slate-900 dark:text-white shrink-0">
+                        <span className="text-[8px] sm:text-xs font-black text-slate-900 dark:text-white shrink-0 whitespace-nowrap">
                           ₹{Number(expense.amount || 0).toFixed(2)}
                         </span>
                       </div>
 
                       {/* Middle: Payer & Participants */}
-                      <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400 mb-2">
-                        <div className="flex items-center gap-1 truncate">
+                      <div className="flex items-center justify-between gap-1 text-[7px] sm:text-[10px] text-slate-400 mb-1 sm:mb-2">
+                        <div className="flex items-center gap-0.5 sm:gap-1 truncate">
                           <span>By</span>
-                          <strong className="text-slate-700 dark:text-slate-300 font-semibold truncate">
+                          <strong className="text-slate-700 dark:text-slate-300 font-semibold truncate max-w-[50px] sm:max-w-none">
                             {payerName.split(' ')[0]}
                           </strong>
                           <span>•</span>
@@ -1038,18 +1182,18 @@ const EnterpriseGroupReport = React.forwardRef(({
                                 }
                                 alt={p.name}
                                 title={`Split: ${p.name}`}
-                                className="inline-block h-3.5 w-3.5 rounded-full ring-1 ring-white dark:ring-slate-800 object-cover"
+                                className="inline-block h-2.5 w-2.5 sm:h-3.5 sm:w-3.5 rounded-full ring-1 ring-white dark:ring-slate-800 object-cover"
                               />
                             ))}
                             {participants.length > 3 && (
-                              <span className="flex items-center justify-center h-3.5 w-3.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[7px] font-bold text-slate-500 ring-1 ring-white dark:ring-slate-800">
+                              <span className="flex items-center justify-center h-2.5 w-2.5 sm:h-3.5 sm:w-3.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[6px] sm:text-[7px] font-bold text-slate-500 ring-1 ring-white dark:ring-slate-800">
                                 +{participants.length - 3}
                               </span>
                             )}
                           </div>
                         </div>
 
-                        <span className="text-[9px] text-slate-400 shrink-0">
+                        <span className="text-[6px] sm:text-[9px] text-slate-400 shrink-0 hidden xs:inline-block">
                           {new Date(expense.createdAt).toLocaleDateString()}
                         </span>
                       </div>
@@ -1057,17 +1201,17 @@ const EnterpriseGroupReport = React.forwardRef(({
                       {/* Bottom Action Bar: View receipt, Details button, Edit button, Delete button */}
                       <div 
                         data-hide-on-export="true"
-                        className="flex items-center justify-between pt-1.5 border-t border-slate-100 dark:border-slate-800/80"
+                        className="flex items-center justify-between pt-1 sm:pt-1.5 border-t border-slate-100 dark:border-slate-800/80"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 sm:gap-2">
                           <button
                             type="button"
                             onClick={() => handleOpenExpenseDetails(expense)}
-                            className="text-[10px] font-bold text-slate-500 hover:text-primary-600 dark:text-slate-400 dark:hover:text-primary-400 flex items-center gap-1 cursor-pointer transition-colors"
+                            className="text-[7px] sm:text-[10px] font-bold text-slate-500 hover:text-primary-600 dark:text-slate-400 dark:hover:text-primary-400 flex items-center gap-0.5 sm:gap-1 cursor-pointer transition-colors"
                             title="View full expense details"
                           >
-                            <Eye size={12} /> Details
+                            <Eye size={10} className="sm:w-3 sm:h-3" /> <span className="hidden xs:inline">Details</span>
                           </button>
 
                           {expense.receipt && (
@@ -1077,32 +1221,32 @@ const EnterpriseGroupReport = React.forwardRef(({
                                 if (onViewReceipt) onViewReceipt(expense.receipt);
                                 else setActiveProofUrl(expense.receipt);
                               }}
-                              className="text-[10px] font-bold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1 cursor-pointer"
+                              className="text-[7px] sm:text-[10px] font-bold text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-0.5 sm:gap-1 cursor-pointer"
                               title="View receipt image"
                             >
-                              <FileText size={12} /> Proof
+                              <FileText size={10} className="sm:w-3 sm:h-3" /> <span className="hidden xs:inline">Proof</span>
                             </button>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-1 ml-auto">
+                        <div className="flex items-center gap-0.5 sm:gap-1 ml-auto">
                           {canManage && (
                             <>
                               <button
                                 type="button"
                                 onClick={() => onEditExpense && onEditExpense(expense)}
-                                className="p-1 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded-lg transition-colors cursor-pointer"
+                                className="p-0.5 sm:p-1 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 rounded transition-colors cursor-pointer"
                                 title="Edit Expense"
                               >
-                                <Edit3 size={13} />
+                                <Edit3 size={10} className="sm:w-3.5 sm:h-3.5" />
                               </button>
                               <button
                                 type="button"
                                 onClick={() => onDeleteExpense && onDeleteExpense(expense._id)}
-                                className="p-1 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg transition-colors cursor-pointer"
+                                className="p-0.5 sm:p-1 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded transition-colors cursor-pointer"
                                 title="Delete Expense"
                               >
-                                <Trash2 size={13} />
+                                <Trash2 size={10} className="sm:w-3.5 sm:h-3.5" />
                               </button>
                             </>
                           )}
@@ -1115,55 +1259,55 @@ const EnterpriseGroupReport = React.forwardRef(({
             )}
           </div>
 
-          {/* 7. BARCODE, SIGNATURES & OFFICIAL AUDIT STAMP */}
-          <div className="border-t-2 border-slate-100 dark:border-slate-800 pt-8 mt-auto relative">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6 relative z-10">
+          {/* 7. BARCODE, SIGNATURES & OFFICIAL AUDIT STAMP - ALWAYS SINGLE HORIZONTAL ROW */}
+          <div className="border-t-2 border-slate-100 dark:border-slate-800 pt-3 sm:pt-8 mt-auto relative">
+            <div className="flex flex-row justify-between items-end gap-1.5 sm:gap-6 relative z-10">
               
               {/* Left: Prepared By & Barcode */}
-              <div className="w-full sm:w-56">
-                <div className="mb-3 opacity-80">
+              <div className="w-24 sm:w-56 shrink-0">
+                <div className="mb-1 sm:mb-3 opacity-80">
                   <Barcode
                     value={reportId}
-                    height={28}
-                    width={1.3}
+                    height={18}
+                    width={0.9}
                     displayValue={false}
                     margin={0}
                     background="transparent"
                     lineColor="#1E293B"
                   />
-                  <p className="text-[10px] font-mono text-slate-400 tracking-wider mt-1">{reportId}</p>
+                  <p className="text-[7px] sm:text-[10px] font-mono text-slate-400 tracking-wider mt-0.5 sm:mt-1 truncate">{reportId}</p>
                 </div>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Prepared By</p>
-                <p className="text-xs font-black text-slate-900 dark:text-white">SmartSplit Financial Engine</p>
-                <p className="text-[10px] text-slate-400">Automated Audit & Balance System</p>
+                <p className="text-[6px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">Prepared By</p>
+                <p className="text-[8px] sm:text-xs font-black text-slate-900 dark:text-white truncate">SmartSplit Engine</p>
+                <p className="text-[6px] sm:text-[10px] text-slate-400 hidden xs:block">Automated Audit System</p>
               </div>
 
               {/* Center: Legal Disclaimer */}
-              <div className="hidden md:block flex-1 text-center pb-1">
-                <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200 mb-0.5">
+              <div className="flex-1 text-center pb-0.5 sm:pb-1 px-1">
+                <p className="text-[7px] sm:text-[11px] font-bold text-slate-800 dark:text-slate-200 mb-0.5">
                   Electronically Verified Document
                 </p>
-                <p className="text-[10px] text-slate-400 max-w-xs mx-auto">
-                  This statement accurately reflects the ledger, splits, settlements, and member balance distributions.
+                <p className="text-[6px] sm:text-[10px] text-slate-400 max-w-xs mx-auto line-clamp-2">
+                  This statement accurately reflects ledger balances, splits, and settlements.
                 </p>
               </div>
 
               {/* Right: Authorized By */}
-              <div className="w-full sm:w-56 sm:text-right">
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Authorized By</p>
-                <div className="mb-2 flex sm:justify-end">
-                  <div className="w-36 border-b border-slate-300 dark:border-slate-700 pb-1 flex sm:justify-end">
-                    <span className="font-signature text-2xl text-blue-900 dark:text-blue-300 opacity-90 transform -rotate-2 select-none">
+              <div className="w-24 sm:w-56 text-right shrink-0">
+                <p className="text-[6px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 sm:mb-2">Authorized By</p>
+                <div className="mb-1 sm:mb-2 flex justify-end">
+                  <div className="w-20 sm:w-36 border-b border-slate-300 dark:border-slate-700 pb-0.5 sm:pb-1 flex justify-end">
+                    <span className="font-signature text-sm sm:text-2xl text-blue-900 dark:text-blue-300 opacity-90 transform -rotate-2 select-none">
                       Akhlaque Rahman
                     </span>
                   </div>
                 </div>
-                <p className="text-xs font-black text-slate-900 dark:text-white">Akhlaque Rahman</p>
-                <p className="text-[10px] text-slate-400">SmartSplit Platform Administrator</p>
+                <p className="text-[8px] sm:text-xs font-black text-slate-900 dark:text-white truncate">Akhlaque Rahman</p>
+                <p className="text-[6px] sm:text-[10px] text-slate-400 truncate">SmartSplit Administrator</p>
               </div>
             </div>
 
-            <div className="text-center mt-8 text-[11px] text-slate-400 font-medium">
+            <div className="text-center mt-3 sm:mt-8 text-[7px] sm:text-[11px] text-slate-400 font-medium">
               Generated by SmartSplit • Verified Enterprise Document • Page 1 of 1
             </div>
           </div>
@@ -1854,6 +1998,403 @@ const EnterpriseGroupReport = React.forwardRef(({
                   type="button"
                   onClick={() => setSelectedSettlement(null)}
                   className="px-5 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-xl text-xs font-bold transition-all cursor-pointer ml-auto"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ========================================================================= */}
+      {/* MEMBER PROFILE & FINANCIAL DETAILS MODAL                                  */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {selectedMemberDetail && modalUserData && (
+          <div 
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto"
+            onClick={() => setSelectedMemberDetail(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh]"
+            >
+              {/* Profile Card Header Banner */}
+              <div className="relative bg-gradient-to-r from-primary-600 via-indigo-600 to-primary-700 p-6 text-white shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedMemberDetail(null)}
+                  className="absolute top-4 right-4 p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-full transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <X size={20} />
+                </button>
+
+                <div className="flex items-center gap-4">
+                  <div className="relative shrink-0">
+                    <img
+                      src={modalUserData.avatar}
+                      alt={modalUserData.name}
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-3 border-white/90 shadow-md bg-white"
+                    />
+                    {modalUserData.isMe && (
+                      <span className="absolute -bottom-1.5 -right-1.5 bg-emerald-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-full ring-2 ring-white">
+                        You
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="min-w-0 pr-6">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-lg sm:text-xl font-black text-white tracking-tight truncate">
+                        {modalUserData.name}
+                      </h3>
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white backdrop-blur-xs">
+                        {modalUserData.role}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-white/80 mt-1 flex items-center gap-1.5 truncate">
+                      <Calendar size={13} className="shrink-0 text-white/70" />
+                      <span>
+                        Member since {new Date(modalUserData.joinedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-Tabs: Overview, Expenses, Settlements */}
+              <div className="flex border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 px-4 shrink-0 overflow-x-auto">
+                <button
+                  type="button"
+                  onClick={() => setMemberDrawerTab('overview')}
+                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors ${
+                    memberDrawerTab === 'overview'
+                      ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Overview & Contact
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemberDrawerTab('expenses')}
+                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors flex items-center gap-1.5 ${
+                    memberDrawerTab === 'expenses'
+                      ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Expenses ({modalUserData.userExpenses.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemberDrawerTab('settlements')}
+                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors flex items-center gap-1.5 ${
+                    memberDrawerTab === 'settlements'
+                      ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Settlements ({modalUserData.userSettlements.length})
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 overflow-y-auto space-y-5 flex-1">
+                {memberDrawerTab === 'overview' && (
+                  <>
+                    {/* 1. Contact & Identity Information */}
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2.5">
+                        Contact & Payment Information
+                      </p>
+                      <div className="grid grid-cols-1 gap-2.5">
+                        
+                        {/* Email */}
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-primary-100 dark:bg-primary-950/60 text-primary-600 dark:text-primary-400 flex items-center justify-center shrink-0">
+                              <Mail size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Email Address</span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                                {modalUserData.email || 'Not provided'}
+                              </p>
+                            </div>
+                          </div>
+                          {modalUserData.email && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(modalUserData.email, 'email')}
+                                className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                title="Copy Email"
+                              >
+                                {copiedField === 'email' ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                              </button>
+                              <a
+                                href={`mailto:${modalUserData.email}`}
+                                className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                title="Send Email"
+                              >
+                                <ExternalLink size={14} />
+                              </a>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Mobile Number */}
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                              <Phone size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Mobile Number</span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                                {modalUserData.mobile || 'Not linked'}
+                              </p>
+                            </div>
+                          </div>
+                          {modalUserData.mobile && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyText(modalUserData.mobile, 'mobile')}
+                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                title="Copy Mobile"
+                              >
+                                {copiedField === 'mobile' ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                              </button>
+                              <a
+                                href={`tel:${modalUserData.mobile}`}
+                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                title="Call Now"
+                              >
+                                <PhoneCall size={14} />
+                              </a>
+                              <a
+                                href={`https://wa.me/${modalUserData.mobile.replace(/[^0-9]/g, '')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-white dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                title="Chat on WhatsApp"
+                              >
+                                <WhatsAppIcon className="w-3.5 h-3.5 fill-emerald-600" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* UPI ID */}
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                              <QrCode size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">UPI ID</span>
+                                {modalUserData.upiId && (
+                                  <span className="text-[8px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950 px-1.5 py-0.2 rounded">
+                                    Verified
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200 truncate">
+                                {modalUserData.upiId || 'No UPI ID provided'}
+                              </p>
+                            </div>
+                          </div>
+                          {modalUserData.upiId && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(modalUserData.upiId, 'upi')}
+                              className="px-2.5 py-1 text-xs font-bold text-primary-600 dark:text-primary-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                              title="Copy UPI ID"
+                            >
+                              {copiedField === 'upi' ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                              <span>{copiedField === 'upi' ? 'Copied' : 'Copy'}</span>
+                            </button>
+                          )}
+                        </div>
+
+                      </div>
+                    </div>
+
+                    {/* 2. Group Financial Standing */}
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-2.5">
+                        Financial Standing in this Group
+                      </p>
+                      <div className="grid grid-cols-3 gap-2 mb-3">
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Total Paid</span>
+                          <p className="text-sm font-black text-slate-900 dark:text-white mt-0.5 truncate">
+                            ₹{modalUserData.totalPaid.toFixed(2)}
+                          </p>
+                        </div>
+
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Total Share</span>
+                          <p className="text-sm font-black text-slate-900 dark:text-white mt-0.5 truncate">
+                            ₹{modalUserData.totalShare.toFixed(2)}
+                          </p>
+                        </div>
+
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                          <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Net Balance</span>
+                          <p className={`text-sm font-black mt-0.5 truncate ${
+                            modalUserData.netBalance > 0 
+                              ? 'text-emerald-600 dark:text-emerald-400' 
+                              : modalUserData.netBalance < 0 
+                              ? 'text-rose-600 dark:text-rose-400' 
+                              : 'text-slate-600 dark:text-slate-400'
+                          }`}>
+                            {modalUserData.netBalance > 0 ? `+₹${modalUserData.netBalance.toFixed(2)}` : modalUserData.netBalance < 0 ? `-₹${Math.abs(modalUserData.netBalance).toFixed(2)}` : '₹0.00'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Standing Summary Card */}
+                      <div className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs ${
+                        modalUserData.netBalance > 0
+                          ? 'bg-emerald-50/70 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300'
+                          : modalUserData.netBalance < 0
+                          ? 'bg-rose-50/70 border-rose-200 dark:bg-rose-950/30 dark:border-rose-900/40 text-rose-800 dark:text-rose-300'
+                          : 'bg-slate-50 border-slate-200 dark:bg-slate-950/40 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}>
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs text-white shrink-0 ${
+                            modalUserData.netBalance > 0 ? 'bg-emerald-600' : modalUserData.netBalance < 0 ? 'bg-rose-600' : 'bg-slate-600'
+                          }`}>
+                            ₹
+                          </div>
+                          <div>
+                            <p className="font-extrabold uppercase text-[10px]">Net Status</p>
+                            <p className="font-bold">
+                              {modalUserData.netBalance > 0
+                                ? `${modalUserData.name.split(' ')[0]} is owed ₹${modalUserData.netBalance.toFixed(2)} in this group.`
+                                : modalUserData.netBalance < 0
+                                ? `${modalUserData.name.split(' ')[0]} needs to pay ₹${Math.abs(modalUserData.netBalance).toFixed(2)}.`
+                                : `${modalUserData.name.split(' ')[0]} is completely settled up!`}
+                            </p>
+                          </div>
+                        </div>
+
+                        {!modalUserData.isMe && onOpenSettlement && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedMemberDetail(null);
+                              onOpenSettlement();
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
+                          >
+                            Settle Up
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {memberDrawerTab === 'expenses' && (
+                  <div className="space-y-2.5">
+                    <p className="text-xs font-bold text-slate-500">
+                      Expenses paid by or split with {modalUserData.name} ({modalUserData.userExpenses.length})
+                    </p>
+                    {modalUserData.userExpenses.length === 0 ? (
+                      <p className="text-xs text-slate-400 py-8 text-center bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                        No expenses associated with this member.
+                      </p>
+                    ) : (
+                      modalUserData.userExpenses.map((exp) => (
+                        <div
+                          key={exp._id}
+                          onClick={() => {
+                            setSelectedMemberDetail(null);
+                            handleOpenExpenseDetails(exp);
+                          }}
+                          className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 hover:border-primary-400 transition-colors cursor-pointer"
+                        >
+                          <div className="min-w-0">
+                            <span className="text-[9px] font-bold text-primary-700 bg-primary-100 dark:bg-primary-950 dark:text-primary-300 px-1.5 py-0.2 rounded uppercase">
+                              {exp.category || 'General'}
+                            </span>
+                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate mt-1">
+                              {exp.description}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {new Date(exp.createdAt).toLocaleDateString()} • Paid by {getPayerName(exp, members)}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-xs font-black text-slate-900 dark:text-white">
+                              ₹{Number(exp.amount || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {memberDrawerTab === 'settlements' && (
+                  <div className="space-y-2.5">
+                    <p className="text-xs font-bold text-slate-500">
+                      Settlements involving {modalUserData.name} ({modalUserData.userSettlements.length})
+                    </p>
+                    {modalUserData.userSettlements.length === 0 ? (
+                      <p className="text-xs text-slate-400 py-8 text-center bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                        No settlements recorded for this member.
+                      </p>
+                    ) : (
+                      modalUserData.userSettlements.map((s) => (
+                        <div
+                          key={s._id}
+                          onClick={() => {
+                            setSelectedMemberDetail(null);
+                            setSelectedSettlement(s);
+                          }}
+                          className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 hover:border-emerald-400 transition-colors cursor-pointer"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                              {s.payerId?.name || 'User'} → {s.receiverId?.name || 'User'}
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {new Date(s.createdAt).toLocaleDateString()} • {s.paymentType || 'UPI'}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                              ₹{Number(s.amount || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 flex items-center justify-between gap-3 shrink-0">
+                <span className="text-[11px] text-slate-400">
+                  SmartSplit Member Directory
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMemberDetail(null)}
+                  className="px-5 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   Close
                 </button>

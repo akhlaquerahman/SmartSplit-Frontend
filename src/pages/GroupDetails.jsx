@@ -4,12 +4,14 @@ import { io } from 'socket.io-client';
 import useGroupStore from '../store/useGroupStore';
 import useAuthStore from '../store/useAuthStore';
 import api from '../utils/api';
-import { Plus, ChevronLeft, Receipt, HandCoins, UserPlus, Info, Image, X, UploadCloud, QrCode, MessageCircle, Edit2, Trash2, History, Calendar, AlertTriangle, FileText, Download, Printer } from 'lucide-react';
+import { Plus, ChevronLeft, Receipt, HandCoins, UserPlus, Info, Image, X, UploadCloud, QrCode, MessageCircle, Edit2, Trash2, History, Calendar, AlertTriangle, FileText, Download, Printer, FileSpreadsheet, Mail } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import ChatDrawer from '../components/ChatDrawer';
 import ProofViewer from '../components/ProofViewer';
 import PrintableReport from '../components/reports/PrintableReport';
 import EnterpriseGroupReport, { WhatsAppIcon } from '../components/reports/EnterpriseGroupReport';
+import EmailReportModal from '../components/reports/EmailReportModal';
+import { exportGroupToExcel } from '../utils/reportExportUtils';
 import GroupPaymentsTab from '../components/GroupPaymentsTab';
 import GroupSettlementsTab from '../components/GroupSettlementsTab';
 import GroupMembersTab from '../components/GroupMembersTab';
@@ -126,7 +128,18 @@ const GroupDetails = () => {
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showSettlementModal, setShowSettlementModal] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const [memberEmail, setMemberEmail] = useState('');
+
+  const handleExportExcel = () => {
+    if (!activeGroup) return;
+    exportGroupToExcel(
+      activeGroup,
+      expenses || [],
+      settlements || [],
+      activeGroup.summary || {}
+    );
+  };
   const [expenseForm, setExpenseForm] = useState({
     description: '',
     amount: '',
@@ -964,33 +977,33 @@ const GroupDetails = () => {
           
           {/* Top Action Toolbar - Precision 2-Col Grid on Mobile, Flex Toolbar on Desktop */}
           <div className="w-full bg-white dark:bg-[#16181d] border border-slate-200 dark:border-slate-800 rounded-2xl p-2 md:p-2.5 shadow-md shadow-slate-200/50 dark:shadow-black/40 mb-3">
-            <div className="grid grid-cols-2 md:flex md:flex-row md:items-center md:justify-between gap-2 md:gap-2.5 w-full">
+            <div className="grid grid-cols-2 md:flex md:flex-row md:items-center md:justify-between gap-2 md:gap-2 w-full">
               
               {/* Left Group on Desktop: Core Financial Operations */}
               <div className="contents md:flex md:items-center md:gap-2">
-                {/* Primary: Add Expense */}
+                {/* 1. Primary: Add Expense */}
                 <button 
                   onClick={() => setShowExpenseModal(true)} 
-                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer order-1"
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-3.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer order-1"
                 >
                   <Plus size={16} strokeWidth={2.5} />
                   <span>Add Expense</span>
                 </button>
                 
-                {/* Success: Settle Up */}
+                {/* 2. Success: Settle Up */}
                 <button 
                   onClick={() => setShowSettlementModal(true)} 
-                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer order-2"
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer order-2"
                 >
                   <QrCode size={16} strokeWidth={2.5} />
                   <span>Settle Up</span>
                 </button>
                 
-                {/* Outline: Add Member (admin only) */}
+                {/* 3. Outline: Add Member (admin only) */}
                 {isAdmin && (
                   <button 
                     onClick={() => setShowAddMember(true)} 
-                    className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-5 md:order-3"
+                    className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-3.5 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-7 md:order-3"
                   >
                     <UserPlus size={16} strokeWidth={2.5} />
                     <span>Add Member</span>
@@ -998,35 +1011,55 @@ const GroupDetails = () => {
                 )}
               </div>
 
-              {/* Right Group on Desktop: Document & Collaboration Actions */}
+              {/* Right Group on Desktop: Document, Sharing & Collaboration Actions */}
               <div className="contents md:flex md:items-center md:gap-2">
-                {/* Action: Download PDF */}
+                {/* 4. Action: Download PDF */}
                 <button 
                   onClick={handlePrint} 
-                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-3 md:order-4"
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-3 md:order-4"
                   title="Download or Print Report as PDF"
                 >
-                  <Download size={16} strokeWidth={2.5} />
-                  <span>Download PDF</span>
+                  <Download size={15} strokeWidth={2.5} />
+                  <span>PDF</span>
                 </button>
 
-                {/* Action: Share on WhatsApp */}
+                {/* 5. Enterprise Feature: Export Excel (.xlsx) / CSV */}
+                <button 
+                  onClick={handleExportExcel} 
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-3 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-4 md:order-5"
+                  title="Export Complete Spreadsheet in Excel (.xlsx) format with Summary, Balances & History"
+                >
+                  <FileSpreadsheet size={15} strokeWidth={2.5} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>Excel</span>
+                </button>
+
+                {/* 6. Action: Share on WhatsApp */}
                 <button 
                   onClick={() => enterpriseReportRef.current?.shareOnWhatsApp?.()} 
-                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs shadow-emerald-500/20 transition-all active:scale-95 cursor-pointer order-4 md:order-5"
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 shadow-xs shadow-emerald-500/20 transition-all active:scale-95 cursor-pointer order-5 md:order-6"
                   title="Generate Crystal-Clear Report Image & Share on WhatsApp"
                 >
                   <WhatsAppIcon className="w-4 h-4 fill-current" />
                   <span>WhatsApp</span>
                 </button>
 
-                {/* Ghost: Chat */}
+                {/* 7. Action: Email Report PDF */}
+                <button 
+                  onClick={() => setShowEmailModal(true)} 
+                  className="w-full md:w-auto h-[40px] md:h-[42px] px-2.5 md:px-3 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-6 md:order-7"
+                  title="Email Verified Statement PDF directly to any Email Address"
+                >
+                  <Mail size={15} strokeWidth={2.5} className="text-indigo-600 dark:text-indigo-400" />
+                  <span>Email</span>
+                </button>
+
+                {/* 8. Ghost: Chat */}
                 <button 
                   onClick={() => setShowChat(true)} 
-                  className={`${isAdmin ? 'w-full md:w-auto' : 'col-span-2 md:col-span-1 w-full md:w-auto'} h-[40px] md:h-[42px] px-2.5 md:px-4 hover:bg-slate-100 dark:hover:bg-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer order-6 md:order-6`}
+                  className={`${isAdmin ? 'w-full md:w-auto order-8 md:order-8' : 'col-span-2 md:col-span-1 w-full md:w-auto order-7 md:order-8'} h-[40px] md:h-[42px] px-2.5 md:px-3 hover:bg-slate-100 dark:hover:bg-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer`}
                   title="Open Group Chat"
                 >
-                  <MessageCircle size={16} strokeWidth={2.5} />
+                  <MessageCircle size={15} strokeWidth={2.5} />
                   <span>Chat</span>
                 </button>
               </div>
@@ -2053,6 +2086,16 @@ const GroupDetails = () => {
         groupName={activeGroup.name}
         isOpen={showChat}
         onClose={() => setShowChat(false)}
+      />
+
+      <EmailReportModal
+        isOpen={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+        group={activeGroup}
+        expenses={expenses || []}
+        settlements={settlements || []}
+        summary={activeGroup.summary || {}}
+        currentUser={currentUser}
       />
     </div>
   );
