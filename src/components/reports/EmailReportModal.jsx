@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Mail, 
@@ -23,10 +23,8 @@ const EmailReportModal = ({
   summary = {},
   currentUser
 }) => {
-  if (!isOpen || !group) return null;
-
-  const members = group.members || [];
-  const groupName = group.name || 'Group';
+  const members = group?.members || [];
+  const groupName = group?.name || 'Group';
   const defaultSubject = `[SmartSplit] Financial Report - ${groupName}`;
 
   const [recipientEmail, setRecipientEmail] = useState('');
@@ -34,6 +32,16 @@ const EmailReportModal = ({
   const [note, setNote] = useState(`Please find attached the official group financial statement and audit summary for ${groupName}.`);
   const [isSending, setIsSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null); // { type: 'success' | 'error', text: '' }
+
+  useEffect(() => {
+    if (isOpen && group) {
+      setSubject(`[SmartSplit] Financial Report - ${groupName}`);
+      setNote(`Please find attached the official group financial statement and audit summary for ${groupName}.`);
+      setStatusMessage(null);
+    }
+  }, [isOpen, group?._id, groupName]);
+
+  if (!isOpen || !group) return null;
 
   const handleSelectMember = (email) => {
     if (!email) return;
@@ -52,9 +60,12 @@ const EmailReportModal = ({
     setStatusMessage(null);
 
     try {
-      // 1. Generate crisp A4 PDF using jsPDF
+      // 1. Generate crisp A4 PDF using jsPDF and extract pure Base64 payload
       const doc = generateGroupReportPdf(group, expenses, settlements, summary);
-      const pdfBase64 = doc.output('datauristring');
+      const rawDataUri = doc.output('datauristring');
+      const pdfBase64 = rawDataUri.includes('base64,')
+        ? rawDataUri.slice(rawDataUri.indexOf('base64,') + 7)
+        : rawDataUri;
 
       // 2. Send via Backend API
       const response = await api.post(`/groups/${group._id}/send-report-email`, {
@@ -247,7 +258,7 @@ const EmailReportModal = ({
                     SmartSplit_{groupName.replace(/[^a-zA-Z0-9]/g, '_')}_Statement.pdf
                   </p>
                   <p className="text-[10px] text-slate-400">
-                    Official Verified Financial Statement (~350 KB)
+                    Official Verified Financial Statement (A4 PDF)
                   </p>
                 </div>
               </div>

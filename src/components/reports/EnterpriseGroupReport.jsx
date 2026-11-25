@@ -50,6 +50,43 @@ export const WhatsAppIcon = ({ className = "w-4 h-4" }) => (
   </svg>
 );
 
+// Helper to safely extract user ID from a group member, balance record, or user object
+const getMemberUserId = (target) => {
+  if (!target) return '';
+  if (typeof target === 'string') return target;
+  if (target.user !== undefined && target.user !== null) {
+    return (target.user?._id || target.user || '').toString();
+  }
+  return (target._id || target.id || '').toString();
+};
+
+// Helper to calculate a user's exact share (in INR) for a given expense
+const getUserShareForExpense = (expense, userId) => {
+  if (!expense || !userId) return 0;
+  if (expense.splitType === 'unequal' && Array.isArray(expense.splitDetails) && expense.splitDetails.length > 0) {
+    return expense.splitDetails.reduce((sum, sd) => {
+      const sdUserId = (sd.user?._id || sd.user || '').toString();
+      return sdUserId === userId ? sum + Number(sd.amount || 0) : sum;
+    }, 0);
+  }
+
+  let participantIds = [];
+  if (Array.isArray(expense.participants) && expense.participants.length > 0) {
+    participantIds = [...new Set(expense.participants.map((p) => (p?._id || p || '').toString()).filter(Boolean))];
+  } else if (Array.isArray(expense.splitDetails) && expense.splitDetails.length > 0) {
+    participantIds = [...new Set(expense.splitDetails.map((sd) => (sd.user?._id || sd.user || '').toString()).filter(Boolean))];
+  }
+
+  const idx = participantIds.indexOf(userId);
+  if (idx === -1 || participantIds.length === 0) return 0;
+
+  const totalCents = Math.round((Number(expense.amount) || 0) * 100);
+  const baseCents = Math.floor(totalCents / participantIds.length);
+  const remainderCents = totalCents - baseCents * participantIds.length;
+  const shareCents = baseCents + (idx === participantIds.length - 1 ? remainderCents : 0);
+  return Number((shareCents / 100).toFixed(2));
+};
+
 // Helper to safely resolve payer name
 const getPayerName = (expense, members) => {
   if (expense.paidBy?.name) return expense.paidBy.name;
@@ -133,7 +170,7 @@ const EnterpriseGroupReport = React.forwardRef(({
 
   // Member Details Modal State
   const [selectedMemberDetail, setSelectedMemberDetail] = useState(null);
-  const [memberDrawerTab, setMemberDrawerTab] = useState('overview'); // 'overview' | 'expenses' | 'settlements'
+  const [memberDrawerTab, setMemberDrawerTab] = useState('overview'); // 'overview' | 'expenses' | 'payments' | 'settlements'
   const [copiedField, setCopiedField] = useState(null);
 
   const handleCopyText = (text, fieldName) => {
@@ -149,17 +186,16 @@ const EnterpriseGroupReport = React.forwardRef(({
 
   const handleOpenMemberDetail = (target) => {
     if (!target) return;
-    let m = null;
-    let rec = null;
-    const targetId = (target?._id || target?.user?._id || target?.user || target || '').toString();
+    const targetId = getMemberUserId(target);
 
-    m = members.find(mem => (mem.user?._id || mem.user || '').toString() === targetId);
-    rec = memberList.find(r => (r.user?._id || r.user || '').toString() === targetId);
+    const m = members.find((mem) => getMemberUserId(mem) === targetId);
+    const rec = memberList.find((r) => getMemberUserId(r) === targetId);
 
     if (m || rec || target?.name || target?.user?.name) {
       setSelectedMemberDetail({
+        userId: targetId,
         member: m || (target?.user ? target : { user: target }),
-        record: rec || { totalPaid: 0, totalShare: 0, netBalance: 0 }
+        record: rec || null
       });
       setMemberDrawerTab('overview');
       setCopiedField(null);
@@ -186,10 +222,13 @@ const EnterpriseGroupReport = React.forwardRef(({
   // Active Member Profile Data for Modal
   const modalUserData = useMemo(() => {
     if (!selectedMemberDetail) return null;
-    const user = selectedMemberDetail.member?.user || selectedMemberDetail.record?.user || {};
-    const member = selectedMemberDetail.member;
-    const record = selectedMemberDetail.record;
-    const userId = (user?._id || user || '').toString();
+    const resolvedUserId = selectedMemberDetail.userId || getMemberUserId(selectedMemberDetail.member) || getMemberUserId(selectedMemberDetail.record);
+    const liveMember = members.find((mem) => getMemberUserId(mem) === resolvedUserId) || selectedMemberDetail.member;
+    const liveRecord = memberList.find((r) => getMemberUserId(r) === resolvedUserId) || selectedMemberDetail.record;
+
+    const user = liveMember?.user || liveRecord?.user || {};
+    const member = liveMember;
+    const userId = resolvedUserId || (user?._id || user || '').toString();
 
     const name = user?.name || 'User';
     const avatar = user?.avatar || user?.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
@@ -200,25 +239,54 @@ const EnterpriseGroupReport = React.forwardRef(({
     const joinedAt = member?.joinedAt || user?.createdAt || group?.createdAt;
     const isMe = currentUser?._id && userId === currentUser._id.toString();
 
-    const totalPaid = Number(record?.totalPaid || 0);
-    const totalShare = Number(record?.totalShare || 0);
-    const netBalance = Number(record?.netBalance || 0);
+    // Filter expenses where this user was the payer (Payments tab)
+    const userPayments = (expenses || [])
+      .filter((e) => (e.paidBy?._id || e.paidBy || '').toString() === userId)
+      .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
-    // Filter user expenses in this group
-    const userExpenses = (expenses || []).filter(e => {
-      const pId = (e.paidBy?._id || e.paidBy || '').toString();
-      const aId = (e.addedBy?._id || e.addedBy || '').toString();
-      const isPart = (e.participants || []).some(p => (p._id || p || '').toString() === userId) ||
-        (e.splitDetails || []).some(s => (s.user?._id || s.user || '').toString() === userId);
-      return pId === userId || aId === userId || isPart;
-    });
+    const userPaymentsTotalCents = userPayments.reduce((sum, e) => sum + Math.round((Number(e.amount) || 0) * 100), 0);
+    const userPaymentsTotal = Number((userPaymentsTotalCents / 100).toFixed(2));
+
+    // Filter all expenses associated with this user (payer, creator, or participant)
+    const userExpenses = (expenses || [])
+      .filter((e) => {
+        const pId = (e.paidBy?._id || e.paidBy || '').toString();
+        const aId = (e.addedBy?._id || e.addedBy || '').toString();
+        const isPart = (e.participants || []).some((p) => (p._id || p || '').toString() === userId) ||
+          (e.splitDetails || []).some((s) => (s.user?._id || s.user || '').toString() === userId);
+        return pId === userId || aId === userId || isPart;
+      })
+      .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
     // Filter user settlements in this group
-    const userSettlements = (settlements || []).filter(s => {
-      const payer = (s.payerId?._id || s.payerId || '').toString();
-      const receiver = (s.receiverId?._id || s.receiverId || '').toString();
-      return payer === userId || receiver === userId;
-    });
+    const userSettlements = (settlements || [])
+      .filter((s) => {
+        const payer = (s.payerId?._id || s.payerId || '').toString();
+        const receiver = (s.receiverId?._id || s.receiverId || '').toString();
+        return payer === userId || receiver === userId;
+      })
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    // Compute fallback ledger values in cents in case backend summary record is absent
+    const computedShareCents = (expenses || []).reduce(
+      (sum, e) => sum + Math.round(getUserShareForExpense(e, userId) * 100),
+      0
+    );
+    const completedUserSettlements = userSettlements.filter((s) => s.status === 'completed');
+    const computedSettlementPaidCents = completedUserSettlements
+      .filter((s) => (s.payerId?._id || s.payerId || '').toString() === userId)
+      .reduce((sum, s) => sum + Math.round((Number(s.amount) || 0) * 100), 0);
+    const computedSettlementReceivedCents = completedUserSettlements
+      .filter((s) => (s.receiverId?._id || s.receiverId || '').toString() === userId)
+      .reduce((sum, s) => sum + Math.round((Number(s.amount) || 0) * 100), 0);
+    const computedNetBalanceCents =
+      (userPaymentsTotalCents + computedSettlementPaidCents) - (computedShareCents + computedSettlementReceivedCents);
+
+    const totalPaid = liveRecord ? Number(liveRecord.totalPaid || 0) : userPaymentsTotal;
+    const totalShare = liveRecord ? Number(liveRecord.totalShare || 0) : Number((computedShareCents / 100).toFixed(2));
+    const settlementPaid = liveRecord ? Number(liveRecord.settlementPaid || 0) : Number((computedSettlementPaidCents / 100).toFixed(2));
+    const settlementReceived = liveRecord ? Number(liveRecord.settlementReceived || 0) : Number((computedSettlementReceivedCents / 100).toFixed(2));
+    const netBalance = liveRecord ? Number(liveRecord.netBalance || 0) : Number((computedNetBalanceCents / 100).toFixed(2));
 
     return {
       userId,
@@ -233,11 +301,15 @@ const EnterpriseGroupReport = React.forwardRef(({
       isMe,
       totalPaid,
       totalShare,
+      settlementPaid,
+      settlementReceived,
       netBalance,
       userExpenses,
+      userPayments,
+      userPaymentsTotal,
       userSettlements
     };
-  }, [selectedMemberDetail, expenses, settlements, group, currentUser]);
+  }, [selectedMemberDetail, members, memberList, expenses, settlements, group, currentUser]);
 
   // Categorize settlements
   const pendingSettlements = useMemo(() => {
@@ -2021,7 +2093,7 @@ const EnterpriseGroupReport = React.forwardRef(({
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 15 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh]"
+              className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh]"
             >
               {/* Profile Card Header Banner */}
               <div className="relative bg-gradient-to-r from-primary-600 via-indigo-600 to-primary-700 p-6 text-white shrink-0">
@@ -2068,12 +2140,12 @@ const EnterpriseGroupReport = React.forwardRef(({
                 </div>
               </div>
 
-              {/* Sub-Tabs: Overview, Expenses, Settlements */}
-              <div className="flex border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 px-4 shrink-0 overflow-x-auto">
+              {/* Sub-Tabs: Overview, Expenses, Payments, Settlements */}
+              <div className="flex border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 px-4 shrink-0 overflow-x-auto hide-scrollbar">
                 <button
                   type="button"
                   onClick={() => setMemberDrawerTab('overview')}
-                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors ${
+                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     memberDrawerTab === 'overview'
                       ? 'border-primary-600 text-primary-600 dark:text-primary-400'
                       : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -2084,7 +2156,7 @@ const EnterpriseGroupReport = React.forwardRef(({
                 <button
                   type="button"
                   onClick={() => setMemberDrawerTab('expenses')}
-                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors flex items-center gap-1.5 ${
+                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                     memberDrawerTab === 'expenses'
                       ? 'border-primary-600 text-primary-600 dark:text-primary-400'
                       : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -2094,8 +2166,19 @@ const EnterpriseGroupReport = React.forwardRef(({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setMemberDrawerTab('payments')}
+                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+                    memberDrawerTab === 'payments'
+                      ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                  }`}
+                >
+                  Payments ({modalUserData.userPayments.length})
+                </button>
+                <button
+                  type="button"
                   onClick={() => setMemberDrawerTab('settlements')}
-                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors flex items-center gap-1.5 ${
+                  className={`py-3 px-3 text-xs font-black uppercase tracking-wider border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
                     memberDrawerTab === 'settlements'
                       ? 'border-primary-600 text-primary-600 dark:text-primary-400'
                       : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
@@ -2252,37 +2335,54 @@ const EnterpriseGroupReport = React.forwardRef(({
                         <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800">
                           <span className="text-[9px] font-bold uppercase text-slate-400 block truncate">Net Balance</span>
                           <p className={`text-sm font-black mt-0.5 truncate ${
-                            modalUserData.netBalance > 0 
+                            modalUserData.netBalance > 0.005 
                               ? 'text-emerald-600 dark:text-emerald-400' 
-                              : modalUserData.netBalance < 0 
+                              : modalUserData.netBalance < -0.005 
                               ? 'text-rose-600 dark:text-rose-400' 
                               : 'text-slate-600 dark:text-slate-400'
                           }`}>
-                            {modalUserData.netBalance > 0 ? `+₹${modalUserData.netBalance.toFixed(2)}` : modalUserData.netBalance < 0 ? `-₹${Math.abs(modalUserData.netBalance).toFixed(2)}` : '₹0.00'}
+                            {modalUserData.netBalance > 0.005
+                              ? `+₹${modalUserData.netBalance.toFixed(2)}`
+                              : modalUserData.netBalance < -0.005
+                              ? `-₹${Math.abs(modalUserData.netBalance).toFixed(2)}`
+                              : '₹0.00'}
                           </p>
                         </div>
                       </div>
 
+                      {(modalUserData.settlementPaid > 0 || modalUserData.settlementReceived > 0) && (
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                            <span className="text-slate-400 font-bold uppercase text-[9px]">Settled Paid</span>
+                            <span className="font-extrabold text-slate-700 dark:text-slate-200">₹{modalUserData.settlementPaid.toFixed(2)}</span>
+                          </div>
+                          <div className="px-3 py-2 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                            <span className="text-slate-400 font-bold uppercase text-[9px]">Settled Received</span>
+                            <span className="font-extrabold text-emerald-600 dark:text-emerald-400">₹{modalUserData.settlementReceived.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Standing Summary Card */}
                       <div className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs ${
-                        modalUserData.netBalance > 0
+                        modalUserData.netBalance > 0.005
                           ? 'bg-emerald-50/70 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900/40 text-emerald-800 dark:text-emerald-300'
-                          : modalUserData.netBalance < 0
+                          : modalUserData.netBalance < -0.005
                           ? 'bg-rose-50/70 border-rose-200 dark:bg-rose-950/30 dark:border-rose-900/40 text-rose-800 dark:text-rose-300'
                           : 'bg-slate-50 border-slate-200 dark:bg-slate-950/40 dark:border-slate-800 text-slate-700 dark:text-slate-300'
                       }`}>
                         <div className="flex items-center gap-2.5">
                           <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs text-white shrink-0 ${
-                            modalUserData.netBalance > 0 ? 'bg-emerald-600' : modalUserData.netBalance < 0 ? 'bg-rose-600' : 'bg-slate-600'
+                            modalUserData.netBalance > 0.005 ? 'bg-emerald-600' : modalUserData.netBalance < -0.005 ? 'bg-rose-600' : 'bg-slate-600'
                           }`}>
                             ₹
                           </div>
                           <div>
                             <p className="font-extrabold uppercase text-[10px]">Net Status</p>
                             <p className="font-bold">
-                              {modalUserData.netBalance > 0
+                              {modalUserData.netBalance > 0.005
                                 ? `${modalUserData.name.split(' ')[0]} is owed ₹${modalUserData.netBalance.toFixed(2)} in this group.`
-                                : modalUserData.netBalance < 0
+                                : modalUserData.netBalance < -0.005
                                 ? `${modalUserData.name.split(' ')[0]} needs to pay ₹${Math.abs(modalUserData.netBalance).toFixed(2)}.`
                                 : `${modalUserData.name.split(' ')[0]} is completely settled up!`}
                             </p>
@@ -2316,33 +2416,146 @@ const EnterpriseGroupReport = React.forwardRef(({
                         No expenses associated with this member.
                       </p>
                     ) : (
-                      modalUserData.userExpenses.map((exp) => (
-                        <div
-                          key={exp._id}
-                          onClick={() => {
-                            setSelectedMemberDetail(null);
-                            handleOpenExpenseDetails(exp);
-                          }}
-                          className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 hover:border-primary-400 transition-colors cursor-pointer"
-                        >
-                          <div className="min-w-0">
-                            <span className="text-[9px] font-bold text-primary-700 bg-primary-100 dark:bg-primary-950 dark:text-primary-300 px-1.5 py-0.2 rounded uppercase">
-                              {exp.category || 'General'}
-                            </span>
-                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate mt-1">
-                              {exp.description}
-                            </p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">
-                              {new Date(exp.createdAt).toLocaleDateString()} • Paid by {getPayerName(exp, members)}
-                            </p>
+                      modalUserData.userExpenses.map((exp) => {
+                        const isPayer = (exp.paidBy?._id || exp.paidBy || '').toString() === modalUserData.userId;
+                        const userShare = getUserShareForExpense(exp, modalUserData.userId);
+                        return (
+                          <div
+                            key={exp._id}
+                            onClick={() => {
+                              setSelectedMemberDetail(null);
+                              handleOpenExpenseDetails(exp);
+                            }}
+                            className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 hover:border-primary-400 transition-colors cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[9px] font-bold text-primary-700 bg-primary-100 dark:bg-primary-950 dark:text-primary-300 px-1.5 py-0.2 rounded uppercase">
+                                  {exp.category || 'General'}
+                                </span>
+                                {isPayer && (
+                                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.2 rounded uppercase">
+                                    Payer
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs font-bold text-slate-900 dark:text-white truncate mt-1">
+                                {exp.description}
+                              </p>
+                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                {new Date(exp.date || exp.createdAt).toLocaleDateString()} • Paid by {getPayerName(exp, members)}
+                                {userShare > 0 ? ` • Share ₹${userShare.toFixed(2)}` : ''}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="text-xs font-black text-slate-900 dark:text-white block">
+                                ₹{Number(exp.amount || 0).toFixed(2)}
+                              </span>
+                              {userShare > 0 && (
+                                <span className="text-[10px] font-bold text-slate-400">
+                                  Share: ₹{userShare.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <span className="text-xs font-black text-slate-900 dark:text-white">
-                              ₹{Number(exp.amount || 0).toFixed(2)}
-                            </span>
-                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+                {memberDrawerTab === 'payments' && (
+                  <div className="space-y-3">
+                    {/* Enterprise Payments Summary Header */}
+                    <div className="p-3.5 bg-gradient-to-r from-emerald-50 to-teal-50/70 dark:from-emerald-950/30 dark:to-teal-950/20 rounded-2xl border border-emerald-200/80 dark:border-emerald-900/50 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                          <CreditCard size={15} />
                         </div>
-                      ))
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                            Payments Made by {modalUserData.name.split(' ')[0]}
+                          </p>
+                          <p className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                            {modalUserData.userPayments.length} {modalUserData.userPayments.length === 1 ? 'expense' : 'expenses'} paid directly as payer
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
+                          Total Paid
+                        </span>
+                        <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">
+                          ₹{modalUserData.userPaymentsTotal.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {modalUserData.userPayments.length === 0 ? (
+                      <div className="py-8 px-4 text-center bg-slate-50 dark:bg-slate-950/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                        <CreditCard size={24} className="mx-auto text-slate-300 dark:text-slate-700 mb-2" />
+                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                          No payments made as payer yet
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {modalUserData.name.split(' ')[0]} has not been the payer on any expense in this group.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {modalUserData.userPayments.map((exp) => {
+                          const participantsCount = getParticipants(exp, members).length;
+                          const ownShare = getUserShareForExpense(exp, modalUserData.userId);
+                          const edited = isExpenseEdited(exp);
+
+                          return (
+                            <div
+                              key={exp._id}
+                              onClick={() => {
+                                setSelectedMemberDetail(null);
+                                handleOpenExpenseDetails(exp);
+                              }}
+                              className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800 border-l-3 border-l-emerald-500 flex items-center justify-between gap-3 hover:border-emerald-400 transition-colors cursor-pointer"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[9px] font-bold text-primary-700 bg-primary-100 dark:bg-primary-950 dark:text-primary-300 px-1.5 py-0.2 rounded uppercase">
+                                    {exp.category || 'General'}
+                                  </span>
+                                  <span className="text-[9px] font-bold text-slate-600 bg-slate-200/80 dark:bg-slate-800 dark:text-slate-300 px-1.5 py-0.2 rounded uppercase">
+                                    {exp.paymentMethod || 'UPI'}
+                                  </span>
+                                  {edited && (
+                                    <span className="text-[9px] font-bold text-amber-700 bg-amber-100 dark:bg-amber-950/70 dark:text-amber-300 px-1.5 py-0.2 rounded uppercase">
+                                      Edited
+                                    </span>
+                                  )}
+                                  {exp.receipt && (
+                                    <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-0.5">
+                                      <FileText size={10} /> Proof
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate mt-1">
+                                  {exp.description}
+                                </p>
+                                <p className="text-[10px] text-slate-400 mt-0.5">
+                                  {new Date(exp.date || exp.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • Split with {participantsCount} {participantsCount === 1 ? 'member' : 'members'}
+                                  {ownShare > 0 ? ` • Own share: ₹${ownShare.toFixed(2)}` : ''}
+                                </p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 block">
+                                  ₹{Number(exp.amount || 0).toFixed(2)}
+                                </span>
+                                <span className="text-[9px] font-bold uppercase text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.2 rounded">
+                                  Paid
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 )}
@@ -2375,8 +2588,17 @@ const EnterpriseGroupReport = React.forwardRef(({
                             </p>
                           </div>
                           <div className="text-right shrink-0">
-                            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 block">
                               ₹{Number(s.amount || 0).toFixed(2)}
+                            </span>
+                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded ${
+                              s.status === 'completed'
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                                : s.status === 'pending'
+                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                                : 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+                            }`}>
+                              {s.status || 'completed'}
                             </span>
                           </div>
                         </div>

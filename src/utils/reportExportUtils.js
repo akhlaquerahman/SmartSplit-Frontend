@@ -192,7 +192,8 @@ export const generateGroupReportPdf = (group, expenses = [], settlements = [], s
   doc.text('Group:', 40, 85);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(groupName, 76, 85);
+  const safeGroupName = groupName.length > 26 ? `${groupName.slice(0, 24)}..` : groupName;
+  doc.text(safeGroupName, 76, 85);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139);
@@ -268,7 +269,7 @@ export const generateGroupReportPdf = (group, expenses = [], settlements = [], s
     startY: currentY + 8,
     head: [['#', 'Member Name', 'Total Paid', 'Total Share', 'Net Balance']],
     body: memberTableData,
-    margin: { left: 40, right: 40 },
+    margin: { left: 40, right: 40, bottom: 45 },
     theme: 'grid',
     headStyles: {
       fillColor: [241, 245, 249],
@@ -303,7 +304,7 @@ export const generateGroupReportPdf = (group, expenses = [], settlements = [], s
   doc.setTextColor(15, 23, 42);
   doc.text(`Itemized Expenses (${expenses.length} Records)`, 40, currentY);
 
-  const expenseTableData = expenses.slice(0, 50).map((exp, idx) => {
+  const expenseTableData = expenses.map((exp, idx) => {
     const payer = exp.paidBy?.name || 'Member';
     return [
       `${idx + 1}`,
@@ -319,7 +320,7 @@ export const generateGroupReportPdf = (group, expenses = [], settlements = [], s
     startY: currentY + 8,
     head: [['#', 'Date', 'Category', 'Description', 'Paid By', 'Amount']],
     body: expenseTableData,
-    margin: { left: 40, right: 40 },
+    margin: { left: 40, right: 40, bottom: 45 },
     theme: 'striped',
     headStyles: {
       fillColor: [37, 99, 235],
@@ -355,7 +356,7 @@ export const generateGroupReportPdf = (group, expenses = [], settlements = [], s
     doc.setTextColor(15, 23, 42);
     doc.text(`Settlements History (${settlements.length} Records)`, 40, currentY);
 
-    const settlementTableData = settlements.slice(0, 30).map((s, idx) => [
+    const settlementTableData = settlements.map((s, idx) => [
       `${idx + 1}`,
       new Date(s.createdAt).toLocaleDateString(),
       `${s.payerId?.name || 'Member'} -> ${s.receiverId?.name || 'Member'}`,
@@ -368,7 +369,7 @@ export const generateGroupReportPdf = (group, expenses = [], settlements = [], s
       startY: currentY + 8,
       head: [['#', 'Date', 'Transfer Flow', 'Method', 'Status', 'Amount']],
       body: settlementTableData,
-      margin: { left: 40, right: 40 },
+      margin: { left: 40, right: 40, bottom: 45 },
       theme: 'grid',
       headStyles: {
         fillColor: [5, 150, 105],
@@ -400,7 +401,7 @@ export const generateGroupReportPdf = (group, expenses = [], settlements = [], s
     doc.setFontSize(7.5);
     doc.setTextColor(148, 163, 184);
     doc.line(40, pageHeight - 30, pageWidth - 40, pageHeight - 30);
-    doc.text(`SmartSplit Enterprise Verified Statement &bull; Page ${i} of ${totalPages}`, 40, pageHeight - 18);
+    doc.text(`SmartSplit Enterprise Verified Statement | Page ${i} of ${totalPages}`, 40, pageHeight - 18);
     doc.text('Electronically verified financial document', pageWidth - 40, pageHeight - 18, { align: 'right' });
   }
 
