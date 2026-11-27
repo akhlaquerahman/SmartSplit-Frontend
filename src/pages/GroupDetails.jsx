@@ -17,6 +17,7 @@ import GroupSettlementsTab from '../components/GroupSettlementsTab';
 import GroupMembersTab from '../components/GroupMembersTab';
 import GroupExpensesTab from '../components/GroupExpensesTab';
 import GroupOverviewTab from '../components/GroupOverviewTab';
+import GroupAvatarCluster from '../components/groups/GroupAvatarCluster';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../utils/cn';
 import { QRCodeSVG } from 'qrcode.react';
@@ -872,21 +873,16 @@ const GroupDetails = () => {
         {/* ================================================= */}
         {/* HEADER */}
         {/* ================================================= */}
-        <div className="relative overflow-hidden bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 dark:from-slate-900 dark:to-slate-800 rounded-2xl md:rounded-[2rem] p-4 md:p-8 text-white shadow-sm border-none">
+        <div className="relative z-30 bg-gradient-to-r from-blue-700 via-blue-600 to-blue-500 dark:from-slate-900 dark:to-slate-800 rounded-2xl md:rounded-[2rem] p-4 md:p-8 text-white shadow-sm border-none">
           {/* Subtle background abstract shapes */}
-          <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white via-blue-100 to-transparent pointer-events-none" />
+          <div className="absolute inset-0 overflow-hidden rounded-2xl md:rounded-[2rem] pointer-events-none">
+            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white via-blue-100 to-transparent" />
+          </div>
           
           <div className="relative flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 md:gap-6 min-w-0">
-              {/* Compact icon container */}
-              <div className="w-10 h-10 md:w-20 md:h-20 rounded-full border-2 border-white/20 bg-white/10 backdrop-blur-sm flex items-center justify-center shrink-0 shadow-inner">
-                <svg className="w-5 h-5 md:w-10 md:h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-              </div>
+            <div className="flex items-center gap-3 md:gap-5 min-w-0">
+              {/* Enterprise Group Members Avatar Cluster */}
+              <GroupAvatarCluster members={activeGroup.members || []} />
               <div className="min-w-0">
                 <h2 className="text-lg md:text-3xl font-extrabold md:font-black tracking-tight leading-tight truncate">{activeGroup.name}</h2>
                 <p className="text-blue-100/90 dark:text-slate-300 text-[10px] md:text-sm mt-0.5 md:mt-1.5 font-medium max-w-xl line-clamp-1 md:line-clamp-2">
@@ -918,11 +914,14 @@ const GroupDetails = () => {
                 {/* Mobile Actions 3-dot Toggle Button */}
                 <div className="md:hidden relative">
                   <button 
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setOpenGroupMenu(!openGroupMenu);
+                      setOpenGroupMenu((prev) => !prev);
                     }}
-                    className="p-2 hover:bg-white/10 active:bg-white/20 rounded-xl text-white transition-colors"
+                    aria-expanded={openGroupMenu}
+                    aria-label="Group options"
+                    className="p-2 hover:bg-white/15 active:bg-white/25 rounded-xl text-white transition-colors cursor-pointer"
                     title="Group Options"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -936,28 +935,33 @@ const GroupDetails = () => {
                       <>
                         <div className="fixed inset-0 z-40" onClick={() => setOpenGroupMenu(false)} />
                         <motion.div
-                          initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                          initial={{ opacity: 0, scale: 0.95, y: -8 }}
                           animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                          className="absolute right-0 mt-2 w-36 z-50 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 rounded-2xl p-1.5 shadow-xl text-slate-800 dark:text-white"
+                          exit={{ opacity: 0, scale: 0.95, y: -8 }}
+                          transition={{ duration: 0.15 }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute right-0 top-full mt-2 w-44 z-50 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-700/80 rounded-2xl p-1.5 shadow-2xl text-slate-800 dark:text-white"
                         >
                           <button
+                            type="button"
                             onClick={() => {
                               setOpenGroupMenu(false);
                               setShowEditModal(true);
                             }}
-                            className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                            className="w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2.5 cursor-pointer transition-colors"
                           >
-                            <Edit2 size={13} /> Edit Group
+                            <Edit2 size={14} className="text-primary-600 dark:text-primary-400" /> Edit Group
                           </button>
                           <button
+                            type="button"
                             onClick={() => {
                               setOpenGroupMenu(false);
                               handleDeleteGroup();
                             }}
-                            className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-950/20 text-rose-600 dark:text-rose-400 flex items-center gap-2"
+                            disabled={isDeleting}
+                            className="w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-400 flex items-center gap-2.5 cursor-pointer transition-colors disabled:opacity-50"
                           >
-                            <Trash2 size={13} /> Delete Group
+                            <Trash2 size={14} /> Delete Group
                           </button>
                         </motion.div>
                       </>
