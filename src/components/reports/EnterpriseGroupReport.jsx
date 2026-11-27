@@ -152,6 +152,7 @@ const EnterpriseGroupReport = React.forwardRef(({
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [payerFilter, setPayerFilter] = useState('all');
+  const [memberFilter, setMemberFilter] = useState('all');
   const [sortOrder, setSortOrder] = useState('newest');
   const [respondingId, setRespondingId] = useState(null);
 
@@ -335,6 +336,45 @@ const EnterpriseGroupReport = React.forwardRef(({
     return Array.from(set);
   }, [expenses]);
 
+  // Helper to check if a user is involved in an expense (payer, creator, or split participant)
+  const isUserInvolvedInExpense = (exp, userId) => {
+    if (!exp || !userId) return false;
+    const pId = (exp.paidBy?._id || exp.paidBy || '').toString();
+    const aId = (exp.addedBy?._id || exp.addedBy || '').toString();
+    const isPart = (exp.participants || []).some((p) => (p._id || p || '').toString() === userId) ||
+      (exp.splitDetails || []).some((s) => (s.user?._id || s.user || '').toString() === userId);
+    return pId === userId || aId === userId || isPart;
+  };
+
+  // Precompute per-member expense involvement & payment stats for filter dropdowns and summary strip
+  const memberFilterStats = useMemo(() => {
+    return (members || []).map((m) => {
+      const userId = getMemberUserId(m);
+      const userObj = m.user && typeof m.user === 'object' ? m.user : {};
+      const name = userObj.name || 'Member';
+      const avatar = userObj.avatar || userObj.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
+
+      const paidExpenses = (expenses || []).filter((e) => (e.paidBy?._id || e.paidBy || '').toString() === userId);
+      const paidTotalCents = paidExpenses.reduce((sum, e) => sum + Math.round((Number(e.amount) || 0) * 100), 0);
+
+      const involvedExpenses = (expenses || []).filter((e) => isUserInvolvedInExpense(e, userId));
+      const shareTotalCents = (expenses || []).reduce(
+        (sum, e) => sum + Math.round(getUserShareForExpense(e, userId) * 100),
+        0
+      );
+
+      return {
+        userId,
+        name,
+        avatar,
+        paidCount: paidExpenses.length,
+        paidTotal: Number((paidTotalCents / 100).toFixed(2)),
+        involvedCount: involvedExpenses.length,
+        shareTotal: Number((shareTotalCents / 100).toFixed(2))
+      };
+    });
+  }, [members, expenses]);
+
   // Filtered & sorted expenses
   const filteredExpenses = useMemo(() => {
     return [...expenses]
@@ -351,6 +391,9 @@ const EnterpriseGroupReport = React.forwardRef(({
           const pId = (exp.paidBy?._id || exp.paidBy || '').toString();
           if (pId !== payerFilter) return false;
         }
+        if (memberFilter !== 'all' && !isUserInvolvedInExpense(exp, memberFilter)) {
+          return false;
+        }
         return true;
       })
       .sort((a, b) => {
@@ -360,7 +403,22 @@ const EnterpriseGroupReport = React.forwardRef(({
         if (sortOrder === 'lowest') return (a.amount || 0) - (b.amount || 0);
         return 0;
       });
-  }, [expenses, searchTerm, categoryFilter, payerFilter, sortOrder, members]);
+  }, [expenses, searchTerm, categoryFilter, payerFilter, memberFilter, sortOrder, members]);
+
+  const filteredExpensesTotal = useMemo(() => {
+    const cents = filteredExpenses.reduce((sum, e) => sum + Math.round((Number(e.amount) || 0) * 100), 0);
+    return Number((cents / 100).toFixed(2));
+  }, [filteredExpenses]);
+
+  const activePayerStat = useMemo(
+    () => (payerFilter !== 'all' ? memberFilterStats.find((s) => s.userId === payerFilter) : null),
+    [payerFilter, memberFilterStats]
+  );
+
+  const activeMemberStat = useMemo(
+    () => (memberFilter !== 'all' ? memberFilterStats.find((s) => s.userId === memberFilter) : null),
+    [memberFilter, memberFilterStats]
+  );
 
   // Fetch expense edit history
   const loadExpenseHistory = async (expenseId) => {
@@ -1118,26 +1176,67 @@ const EnterpriseGroupReport = React.forwardRef(({
               </button>
             </div>
 
-            {/* Filter and Search Bar */}
+            {/* Single-Line Filter and Search Bar */}
             <div 
               data-hide-on-export="true"
-              className="bg-slate-50 dark:bg-slate-900/60 p-1.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800 mb-2.5 sm:mb-4 flex flex-wrap items-center gap-1.5 sm:gap-2.5"
+              className="bg-slate-50 dark:bg-slate-900/60 p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl border border-slate-200/80 dark:border-slate-800 mb-2.5 sm:mb-3 flex flex-nowrap items-center gap-1 sm:gap-2 overflow-x-auto hide-scrollbar"
             >
-              <div className="relative flex-1 min-w-[140px] sm:min-w-[180px]">
-                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 sm:w-3.5 sm:h-3.5" />
+              <div className="relative flex-1 min-w-[100px] sm:min-w-[160px] shrink-0">
+                <Search size={12} className="absolute left-2 sm:left-2.5 top-1/2 -translate-y-1/2 text-slate-400 sm:w-3.5 sm:h-3.5" />
                 <input
                   type="text"
                   placeholder="Search description, payer..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-7 sm:pl-8 pr-2 sm:pr-3 py-1 sm:py-1.5 text-[9px] sm:text-xs bg-white dark:bg-slate-800 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none focus:border-primary-500"
+                  className="w-full h-7 sm:h-9 pl-6 sm:pl-8 pr-2 sm:pr-3 text-[9px] sm:text-xs bg-white dark:bg-slate-800 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white outline-none focus:border-primary-500 transition-colors"
                 />
               </div>
 
               <select
+                value={memberFilter}
+                onChange={(e) => setMemberFilter(e.target.value)}
+                title="Filter by member included in expense"
+                className={`h-7 sm:h-9 px-1.5 sm:px-2.5 text-[9px] sm:text-xs rounded-lg sm:rounded-xl border outline-none cursor-pointer shrink-0 max-w-[96px] sm:max-w-[160px] transition-colors ${
+                  memberFilter !== 'all'
+                    ? 'bg-primary-50 dark:bg-primary-950/50 border-primary-300 dark:border-primary-700 text-primary-700 dark:text-primary-300 font-bold'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <option value="all">All Memebr</option>
+                {memberFilterStats.map((s) => (
+                  <option key={s.userId} value={s.userId}>
+                    {s.name} ({s.involvedCount})
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={payerFilter}
+                onChange={(e) => setPayerFilter(e.target.value)}
+                title="Filter by who paid the expense"
+                className={`h-7 sm:h-9 px-1.5 sm:px-2.5 text-[9px] sm:text-xs rounded-lg sm:rounded-xl border outline-none cursor-pointer shrink-0 max-w-[96px] sm:max-w-[165px] transition-colors ${
+                  payerFilter !== 'all'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-bold'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <option value="all">Paid By: All</option>
+                {memberFilterStats.map((s) => (
+                  <option key={s.userId} value={s.userId}>
+                    {s.name} (₹{s.paidTotal.toFixed(0)})
+                  </option>
+                ))}
+              </select>
+
+              <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="px-1.5 sm:px-2.5 py-1 sm:py-1.5 text-[8px] sm:text-xs bg-white dark:bg-slate-800 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
+                title="Filter by category"
+                className={`h-7 sm:h-9 px-1.5 sm:px-2.5 text-[9px] sm:text-xs rounded-lg sm:rounded-xl border outline-none cursor-pointer shrink-0 max-w-[86px] sm:max-w-[140px] transition-colors ${
+                  categoryFilter !== 'all'
+                    ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 font-bold'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                }`}
               >
                 <option value="all">All Categories</option>
                 {categories.map((c) => (
@@ -1150,7 +1249,8 @@ const EnterpriseGroupReport = React.forwardRef(({
               <select
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value)}
-                className="px-1.5 sm:px-2.5 py-1 sm:py-1.5 text-[8px] sm:text-xs bg-white dark:bg-slate-800 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
+                title="Sort expenses"
+                className="h-7 sm:h-9 px-1.5 sm:px-2.5 text-[9px] sm:text-xs bg-white dark:bg-slate-800 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 outline-none cursor-pointer shrink-0 max-w-[84px] sm:max-w-[130px]"
               >
                 <option value="newest">Newest First</option>
                 <option value="oldest">Oldest First</option>
@@ -1158,20 +1258,86 @@ const EnterpriseGroupReport = React.forwardRef(({
                 <option value="lowest">Lowest Amount</option>
               </select>
 
-              {(searchTerm || categoryFilter !== 'all' || sortOrder !== 'newest') && (
+              {(searchTerm || categoryFilter !== 'all' || payerFilter !== 'all' || memberFilter !== 'all' || sortOrder !== 'newest') && (
                 <button
                   type="button"
                   onClick={() => {
                     setSearchTerm('');
                     setCategoryFilter('all');
+                    setPayerFilter('all');
+                    setMemberFilter('all');
                     setSortOrder('newest');
                   }}
-                  className="text-[9px] sm:text-[11px] font-bold text-primary-600 dark:text-primary-400 hover:underline px-1 cursor-pointer"
+                  className="h-7 sm:h-9 px-2 sm:px-2.5 text-[9px] sm:text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/60 border border-rose-200 dark:border-rose-800/60 rounded-lg sm:rounded-xl shrink-0 cursor-pointer transition-colors"
                 >
                   Reset
                 </button>
               )}
             </div>
+
+            {/* Active Member / Payer Filter Summary Strip */}
+            {(activeMemberStat || activePayerStat) && (
+              <div
+                data-hide-on-export="true"
+                className="mb-2.5 sm:mb-4 p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-gradient-to-r from-slate-50 via-primary-50/40 to-emerald-50/40 dark:from-slate-900 dark:via-primary-950/20 dark:to-emerald-950/20 border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[10px] sm:text-xs"
+              >
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+                  {activeMemberStat && (
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={activeMemberStat.avatar}
+                        alt={activeMemberStat.name}
+                        className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-primary-200 dark:border-primary-800 shrink-0"
+                      />
+                      <div>
+                        <span className="text-[8px] sm:text-[10px] font-black uppercase tracking-wider text-primary-600 dark:text-primary-400 block">
+                          Involved Member
+                        </span>
+                        <p className="font-bold text-slate-800 dark:text-slate-200">
+                          {activeMemberStat.name} is in <span className="font-black text-primary-700 dark:text-primary-300">{activeMemberStat.involvedCount}</span> {activeMemberStat.involvedCount === 1 ? 'expense' : 'expenses'}
+                          <span className="text-slate-400 mx-1">•</span>
+                          Share: <span className="font-black text-slate-900 dark:text-white">₹{activeMemberStat.shareTotal.toFixed(2)}</span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {activePayerStat && (
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={activePayerStat.avatar}
+                        alt={activePayerStat.name}
+                        className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-emerald-200 dark:border-emerald-800 shrink-0"
+                      />
+                      <div>
+                        <span className="text-[8px] sm:text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
+                          Paid By Filter
+                        </span>
+                        <p className="font-bold text-slate-800 dark:text-slate-200">
+                          {activePayerStat.name} paid <span className="font-black text-emerald-600 dark:text-emerald-400">₹{activePayerStat.paidTotal.toFixed(2)}</span> across <span className="font-black">{activePayerStat.paidCount}</span> {activePayerStat.paidCount === 1 ? 'expense' : 'expenses'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 ml-auto">
+                  <span className="px-2 py-0.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-bold text-slate-700 dark:text-slate-200">
+                    Showing {filteredExpenses.length}: ₹{filteredExpensesTotal.toFixed(2)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMemberFilter('all');
+                      setPayerFilter('all');
+                    }}
+                    className="text-[9px] sm:text-xs font-bold text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Expense Cards Grid - ALWAYS 3 COLUMNS LIKE DESKTOP */}
             {filteredExpenses.length === 0 ? (
