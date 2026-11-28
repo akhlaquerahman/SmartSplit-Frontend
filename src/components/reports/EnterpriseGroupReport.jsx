@@ -469,6 +469,10 @@ const EnterpriseGroupReport = React.forwardRef(({
   // =========================================================================
   // ENTERPRISE PDF-GRADE WHATSAPP REPORT IMAGE GENERATION
   // =========================================================================
+  const isMobileClient = () =>
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
   const handleShareOnWhatsApp = async () => {
     if (isGeneratingImage) return;
     setIsGeneratingImage(true);
@@ -488,46 +492,40 @@ const EnterpriseGroupReport = React.forwardRef(({
 
       const fileName = `SmartSplit_Report_${groupName.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
       const imageFile = new File([blob], fileName, { type: 'image/png' });
+      const isMobileDevice = isMobileClient();
+      const canNativeShare = Boolean(
+        isMobileDevice &&
+          typeof navigator !== 'undefined' &&
+          navigator.canShare &&
+          navigator.canShare({ files: [imageFile] })
+      );
 
-      // Automatically copy PNG image to clipboard if browser allows
+      // Automatically copy PNG image to clipboard on desktop if browser allows
       let copied = false;
-      try {
-        if (navigator.clipboard && window.ClipboardItem) {
-          await navigator.clipboard.write([
-            new ClipboardItem({ 'image/png': blob })
-          ]);
-          copied = true;
-        }
-      } catch (clipErr) {
-        console.log('Clipboard write will trigger on Open WhatsApp click:', clipErr);
-      }
-
-      // On mobile devices supporting file-only share, share the image file directly (no text)
-      let sharedViaNative = false;
-      const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      if (isMobileDevice && navigator.canShare && navigator.canShare({ files: [imageFile] })) {
+      if (!isMobileDevice) {
         try {
-          await navigator.share({
-            files: [imageFile]
-          });
-          sharedViaNative = true;
-        } catch (shareErr) {
-          if (shareErr.name !== 'AbortError') {
-            console.log('Native file share dismissed, falling back to modal:', shareErr);
-          } else {
-            sharedViaNative = true;
+          if (navigator.clipboard && window.ClipboardItem) {
+            await navigator.clipboard.write([
+              new ClipboardItem({ 'image/png': blob })
+            ]);
+            copied = true;
           }
+        } catch (clipErr) {
+          console.log('Clipboard write will trigger on Open WhatsApp click:', clipErr);
         }
       }
 
-      if (!sharedViaNative) {
-        setWhatsappModalData({
-          imageUrl,
-          blob,
-          fileName,
-          copiedToClipboard: copied
-        });
-      }
+      // Always present the 2-option modal (Download vs Send on WhatsApp) first;
+      // mobile native share / WhatsApp redirect runs cleanly inside the user's button click gesture.
+      setWhatsappModalData({
+        imageUrl,
+        blob,
+        imageFile,
+        fileName,
+        isMobileDevice,
+        canNativeShare,
+        copiedToClipboard: copied
+      });
     } catch (err) {
       console.error('Error generating WhatsApp report image:', err);
       alert(`Could not render report image: ${err?.message || 'Please check console'}. Please try again.`);
@@ -554,7 +552,34 @@ const EnterpriseGroupReport = React.forwardRef(({
   const handleOpenWhatsAppWeb = async () => {
     if (!whatsappModalData) return;
 
-    // 1. Copy ONLY the PNG image to clipboard (never text)
+    const isMobile = whatsappModalData.isMobileDevice || isMobileClient();
+
+    // Mobile flow: invoke native Share Sheet first (runs inside direct click gesture so WhatsApp opens contact picker with image attached!)
+    if (isMobile) {
+      const fileToShare =
+        whatsappModalData.imageFile ||
+        (whatsappModalData.blob ? new File([whatsappModalData.blob], whatsappModalData.fileName, { type: 'image/png' }) : null);
+
+      if (fileToShare && navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
+        try {
+          await navigator.share({ files: [fileToShare] });
+          return;
+        } catch (err) {
+          if (err?.name === 'AbortError') return;
+          console.warn('Mobile native file share failed, falling back to download + app link:', err);
+        }
+      }
+
+      // Fallback when Web Share file sharing is unavailable (e.g. non-HTTPS HTTP LAN preview):
+      // Save HD image to device and redirect directly to the WhatsApp app contact picker (never web.whatsapp.com)
+      handleDownloadImageFile();
+      setTimeout(() => {
+        window.location.href = 'whatsapp://send';
+      }, 250);
+      return;
+    }
+
+    // Desktop flow: copy ONLY the PNG image to clipboard (never text) and open WhatsApp Web
     let copied = false;
     try {
       if (navigator.clipboard && window.ClipboardItem && whatsappModalData.blob) {
@@ -569,10 +594,9 @@ const EnterpriseGroupReport = React.forwardRef(({
     }
 
     if (!copied) {
-      alert('Your browser blocked automatic image copy. Please click "Download HD Image" to attach it in WhatsApp.');
+      alert('Your browser blocked automatic image copy. Please click "Download" to attach it in WhatsApp.');
     }
 
-    // 2. Redirect to WhatsApp Web cleanly with NO pre-filled text
     window.open('https://web.whatsapp.com/', '_blank', 'noopener,noreferrer');
   };
 
@@ -1465,16 +1489,20 @@ const EnterpriseGroupReport = React.forwardRef(({
               </div>
 
               {/* Body */}
-              <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
                 {/* Status Notice */}
                 <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl flex items-start gap-3 text-xs text-emerald-900 dark:text-emerald-200">
                   <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-extrabold text-sm">Report Image Ready in PDF-Grade HD!</p>
                     <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
-                      {whatsappModalData.copiedToClipboard
-                        ? 'HD image is copied to your clipboard. Click "Open WhatsApp & Paste", select any friend/group, and press Ctrl+V!'
-                        : 'Click "Open WhatsApp & Paste" below — it will copy the HD image to your clipboard and open WhatsApp Web.'}
+                      {whatsappModalData.isMobileDevice
+                        ? whatsappModalData.canNativeShare
+                          ? 'Choose "Download" to save the image, or tap "Send on WhatsApp" to select friends/groups and send it directly.'
+                          : 'Choose "Download" to save the HD image, or tap "Send on WhatsApp" to download & open WhatsApp so you can select friends and attach it.'
+                        : whatsappModalData.copiedToClipboard
+                          ? 'HD image is copied to your clipboard. Click "Open WhatsApp & Paste", select any friend/group, and press Ctrl+V!'
+                          : 'Click "Open WhatsApp & Paste" below — it will copy the HD image to your clipboard and open WhatsApp Web.'}
                     </p>
                   </div>
                 </div>
@@ -1503,39 +1531,68 @@ const EnterpriseGroupReport = React.forwardRef(({
                   <p className="font-extrabold uppercase text-[10px] text-slate-400 tracking-wider">
                     How it works
                   </p>
-                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                    <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
-                    <span>Click <strong>Open WhatsApp & Paste</strong> — copies the HD report image (no text) and opens WhatsApp.</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                    <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
-                    <span>Select any friend, contact, or WhatsApp group.</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                    <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
-                    <span>Press <strong>Ctrl + V</strong> (Paste) and hit Send — the crisp statement image attaches immediately!</span>
-                  </div>
+                  {whatsappModalData.isMobileDevice ? (
+                    <>
+                      <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                        <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+                        <span>
+                          Tap <strong>Send on WhatsApp</strong>{' '}
+                          {whatsappModalData.canNativeShare
+                            ? 'and pick WhatsApp from your share sheet.'
+                            : 'to save the HD image and open the WhatsApp app.'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                        <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+                        <span>Select one or more friends or WhatsApp groups (forward style).</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                        <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+                        <span>
+                          {whatsappModalData.canNativeShare
+                            ? 'Tap Send — the crisp statement image goes straight through!'
+                            : 'Attach the downloaded HD PNG from Gallery/Files and tap Send!'}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                        <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+                        <span>Click <strong>Open WhatsApp &amp; Paste</strong> — copies the HD report image (no text) and opens WhatsApp Web.</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                        <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+                        <span>Select any friend, contact, or WhatsApp group.</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                        <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+                        <span>Press <strong>Ctrl + V</strong> (Paste) and hit Send — the crisp statement image attaches immediately!</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
-              {/* Modal Footer Actions */}
-              <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              {/* Modal Footer Actions - Always single horizontal row */}
+              <div className="p-3.5 sm:p-4 sm:px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 flex flex-nowrap items-center justify-between gap-2 sm:gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={handleDownloadImageFile}
-                  className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  className="px-3 sm:px-4 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
                 >
-                  <Download size={14} /> Download HD Image
+                  <Download size={14} className="shrink-0" />
+                  <span>Download</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleOpenWhatsAppWeb}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-emerald-600/30 active:scale-95 flex items-center gap-2 cursor-pointer"
+                  className="flex-1 sm:flex-initial px-3.5 sm:px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] sm:text-xs font-black transition-all shadow-md shadow-emerald-600/30 active:scale-95 flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap"
                 >
-                  <WhatsAppIcon className="w-4 h-4 fill-white" />
-                  <span>Open WhatsApp & Paste</span>
-                  <ExternalLink size={14} />
+                  <WhatsAppIcon className="w-4 h-4 fill-white shrink-0" />
+                  <span>{whatsappModalData.isMobileDevice ? 'Send on WhatsApp' : 'Open WhatsApp & Paste'}</span>
+                  <ExternalLink size={13} className="shrink-0" />
                 </button>
               </div>
             </motion.div>
