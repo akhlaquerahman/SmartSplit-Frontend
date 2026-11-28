@@ -393,7 +393,7 @@ const Friends = () => {
         if (fId) {
           nextPresence[fId] = {
             isOnline: Boolean(f.isOnline),
-            lastSeen: f.lastSeen || null
+            lastSeen: f.lastSeen || f.updatedAt || f.createdAt || null
           };
         }
       });
@@ -785,23 +785,23 @@ const Friends = () => {
     return formatDDMMYYYY(date);
   };
 
-  // WhatsApp-style Online / Last Seen presence formatter
+  // WhatsApp-style Online / Last Seen presence formatter (never displays bare "Offline")
   const getContactPresence = (friendObj) => {
     const fId = (friendObj?._id || friendObj?.id)?.toString();
     const live = fId ? presenceMap[fId] : null;
     const isOnline = live ? live.isOnline : Boolean(friendObj?.isOnline);
-    const rawLastSeen = live?.lastSeen || friendObj?.lastSeen;
+    const rawLastSeen = live?.lastSeen || friendObj?.lastSeen || friendObj?.updatedAt || friendObj?.createdAt;
 
     if (isOnline) {
       return { isOnline: true, label: 'Online' };
     }
     if (!rawLastSeen) {
-      return { isOnline: false, label: 'Offline' };
+      return { isOnline: false, label: 'last seen recently' };
     }
 
     const lsDate = new Date(rawLastSeen);
     if (isNaN(lsDate.getTime())) {
-      return { isOnline: false, label: 'Offline' };
+      return { isOnline: false, label: 'last seen recently' };
     }
 
     const diffDays = getCalendarDayDiff(lsDate);
@@ -817,7 +817,7 @@ const Friends = () => {
       const weekday = lsDate.toLocaleDateString('en-US', { weekday: 'long' });
       return { isOnline: false, label: `last seen ${weekday} at ${timePart}` };
     }
-    return { isOnline: false, label: `last seen ${formatDDMMYYYY(lsDate)}` };
+    return { isOnline: false, label: `last seen ${formatDDMMYYYY(lsDate)} at ${timePart}` };
   };
 
   // Sort friends by most recent message timestamp (descending - WhatsApp style)
@@ -1079,24 +1079,15 @@ const Friends = () => {
                         </div>
 
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <h3 className="font-extrabold text-xs sm:text-base text-slate-800 dark:text-white group-hover:text-primary-600 transition-colors truncate max-w-[110px] xs:max-w-[150px] sm:max-w-none">
-                              {activeChatFriend.name || 'Unknown User'}
-                            </h3>
-                            {activePresence.isOnline && (
-                              <span className="hidden sm:inline-flex px-1.5 py-0.2 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold rounded-md shrink-0">
-                                Online
-                              </span>
-                            )}
-                          </div>
-                          <p className={`text-[10px] sm:text-[11px] font-medium truncate max-w-[140px] xs:max-w-[180px] sm:max-w-none ${
+                          <h3 className="font-extrabold text-xs sm:text-base text-slate-800 dark:text-white group-hover:text-primary-600 transition-colors truncate max-w-[140px] xs:max-w-[180px] sm:max-w-none">
+                            {activeChatFriend.name || 'Unknown User'}
+                          </h3>
+                          <p className={`text-[10px] sm:text-[11px] font-medium truncate max-w-[160px] xs:max-w-[200px] sm:max-w-none ${
                             activePresence.isOnline
                               ? 'text-emerald-600 dark:text-emerald-400'
                               : 'text-slate-400'
                           }`}>
-                            {activePresence.isOnline
-                              ? (activeChatFriend.mobile ? `Online • ${activeChatFriend.mobile}` : 'Online')
-                              : activePresence.label}
+                            {activePresence.label}
                           </p>
                         </div>
                       </div>
