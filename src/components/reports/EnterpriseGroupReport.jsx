@@ -491,39 +491,27 @@ const EnterpriseGroupReport = React.forwardRef(({
       });
 
       const fileName = `SmartSplit_Report_${groupName.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
-      const imageFile = new File([blob], fileName, { type: 'image/png' });
       const isMobileDevice = isMobileClient();
-      const canNativeShare = Boolean(
-        isMobileDevice &&
-          typeof navigator !== 'undefined' &&
-          navigator.canShare &&
-          navigator.canShare({ files: [imageFile] })
-      );
 
-      // Automatically copy PNG image to clipboard on desktop if browser allows
+      // Automatically try copying ONLY PNG image to clipboard if browser allows
       let copied = false;
-      if (!isMobileDevice) {
-        try {
-          if (navigator.clipboard && window.ClipboardItem) {
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': blob })
-            ]);
-            copied = true;
-          }
-        } catch (clipErr) {
-          console.log('Clipboard write will trigger on Open WhatsApp click:', clipErr);
+      try {
+        if (navigator.clipboard && window.ClipboardItem) {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blob })
+          ]);
+          copied = true;
         }
+      } catch (clipErr) {
+        console.log('Clipboard write will trigger on WhatsApp button click:', clipErr);
       }
 
-      // Always present the 2-option modal (Download vs Send on WhatsApp) first;
-      // mobile native share / WhatsApp redirect runs cleanly inside the user's button click gesture.
+      // Present the 2-option modal (Download vs Send on WhatsApp / Open WhatsApp & Paste)
       setWhatsappModalData({
         imageUrl,
         blob,
-        imageFile,
         fileName,
         isMobileDevice,
-        canNativeShare,
         copiedToClipboard: copied
       });
     } catch (err) {
@@ -549,50 +537,37 @@ const EnterpriseGroupReport = React.forwardRef(({
     document.body.removeChild(a);
   };
 
+  const copyReportPngToClipboard = async () => {
+    if (!whatsappModalData?.blob || !navigator.clipboard || !window.ClipboardItem) {
+      return false;
+    }
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': whatsappModalData.blob })
+      ]);
+      setWhatsappModalData((prev) => (prev ? { ...prev, copiedToClipboard: true } : prev));
+      return true;
+    } catch (err) {
+      console.error('Clipboard image copy failed:', err);
+      return false;
+    }
+  };
+
   const handleOpenWhatsAppWeb = async () => {
     if (!whatsappModalData) return;
 
     const isMobile = whatsappModalData.isMobileDevice || isMobileClient();
 
-    // Mobile flow: invoke native Share Sheet first (runs inside direct click gesture so WhatsApp opens contact picker with image attached!)
+    // Copy PNG image to clipboard inside direct user click gesture (never download on Send click)
+    const copied = await copyReportPngToClipboard();
+
+    // Mobile flow: open WhatsApp mobile app directly (no multi-app share sheet, no auto-download)
     if (isMobile) {
-      const fileToShare =
-        whatsappModalData.imageFile ||
-        (whatsappModalData.blob ? new File([whatsappModalData.blob], whatsappModalData.fileName, { type: 'image/png' }) : null);
-
-      if (fileToShare && navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
-        try {
-          await navigator.share({ files: [fileToShare] });
-          return;
-        } catch (err) {
-          if (err?.name === 'AbortError') return;
-          console.warn('Mobile native file share failed, falling back to download + app link:', err);
-        }
-      }
-
-      // Fallback when Web Share file sharing is unavailable (e.g. non-HTTPS HTTP LAN preview):
-      // Save HD image to device and redirect directly to the WhatsApp app contact picker (never web.whatsapp.com)
-      handleDownloadImageFile();
-      setTimeout(() => {
-        window.location.href = 'whatsapp://send';
-      }, 250);
+      window.location.href = 'whatsapp://send';
       return;
     }
 
-    // Desktop flow: copy ONLY the PNG image to clipboard (never text) and open WhatsApp Web
-    let copied = false;
-    try {
-      if (navigator.clipboard && window.ClipboardItem && whatsappModalData.blob) {
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': whatsappModalData.blob })
-        ]);
-        copied = true;
-        setWhatsappModalData((prev) => (prev ? { ...prev, copiedToClipboard: true } : prev));
-      }
-    } catch (err) {
-      console.error('Clipboard image copy failed:', err);
-    }
-
+    // Desktop flow: open WhatsApp Web in a new tab so user can paste the copied PNG via Ctrl+V
     if (!copied) {
       alert('Your browser blocked automatic image copy. Please click "Download" to attach it in WhatsApp.');
     }
@@ -1497,9 +1472,7 @@ const EnterpriseGroupReport = React.forwardRef(({
                     <p className="font-extrabold text-sm">Report Image Ready in PDF-Grade HD!</p>
                     <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
                       {whatsappModalData.isMobileDevice
-                        ? whatsappModalData.canNativeShare
-                          ? 'Choose "Download" to save the image, or tap "Send on WhatsApp" to select friends/groups and send it directly.'
-                          : 'Choose "Download" to save the HD image, or tap "Send on WhatsApp" to download & open WhatsApp so you can select friends and attach it.'
+                        ? 'Tap "Download" to save the image, or "Send on WhatsApp" to copy the HD image and open WhatsApp directly.'
                         : whatsappModalData.copiedToClipboard
                           ? 'HD image is copied to your clipboard. Click "Open WhatsApp & Paste", select any friend/group, and press Ctrl+V!'
                           : 'Click "Open WhatsApp & Paste" below — it will copy the HD image to your clipboard and open WhatsApp Web.'}
@@ -1535,24 +1508,15 @@ const EnterpriseGroupReport = React.forwardRef(({
                     <>
                       <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                         <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
-                        <span>
-                          Tap <strong>Send on WhatsApp</strong>{' '}
-                          {whatsappModalData.canNativeShare
-                            ? 'and pick WhatsApp from your share sheet.'
-                            : 'to save the HD image and open the WhatsApp app.'}
-                        </span>
+                        <span>Tap <strong>Send on WhatsApp</strong> — copies the HD report image and opens WhatsApp directly.</span>
                       </div>
                       <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                         <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
-                        <span>Select one or more friends or WhatsApp groups (forward style).</span>
+                        <span>Select any friend, contact, or WhatsApp group in WhatsApp.</span>
                       </div>
                       <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                         <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
-                        <span>
-                          {whatsappModalData.canNativeShare
-                            ? 'Tap Send — the crisp statement image goes straight through!'
-                            : 'Attach the downloaded HD PNG from Gallery/Files and tap Send!'}
-                        </span>
+                        <span>Paste the copied image from keyboard (or Download &amp; attach) and hit Send!</span>
                       </div>
                     </>
                   ) : (
