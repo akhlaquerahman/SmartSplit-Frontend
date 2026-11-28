@@ -103,10 +103,13 @@ const Dashboard = () => {
     const allSettlements = history.filter(h => h.type === 'settlement');
     
     // Count pending settlements involving user
-    pendingSettlements = allSettlements.filter(s => 
-      s.status === 'Pending' && 
-      ((s.payer?._id === user._id) || (s.receiver?._id === user._id) || (s.payer === user._id) || (s.receiver === user._id))
-    ).length;
+    const currentUserId = user?._id?.toString();
+    pendingSettlements = allSettlements.filter(s => {
+      const isPending = (s.status || '').toLowerCase() === 'pending';
+      const payerId = (s.payer?._id || s.payer || '').toString();
+      const receiverId = (s.receiver?._id || s.receiver || '').toString();
+      return isPending && Boolean(currentUserId) && (payerId === currentUserId || receiverId === currentUserId);
+    }).length;
 
     // Monthly Expense (mock logic based on recent expenses)
     const currentMonth = new Date().getMonth();

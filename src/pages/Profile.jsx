@@ -24,7 +24,7 @@ import { compressImageFile } from '../utils/imageCompression';
 
 const Profile = () => {
   const { user, updateProfile, changePassword, getMe, loading, error, setError, clearError, logout } = useAuthStore();
-  const { groups, fetchGroups } = useGroupStore();
+  const { groups, fetchGroups, history, fetchHistory } = useGroupStore();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -61,13 +61,14 @@ const Profile = () => {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Fetch groups and latest user profile to sync fields
+  // Fetch groups, history ledger, and latest user profile to sync fields
   useEffect(() => {
     fetchGroups();
+    fetchHistory();
     if (getMe) {
       getMe();
     }
-  }, [fetchGroups, getMe]);
+  }, [fetchGroups, fetchHistory, getMe]);
 
   const memberSince = useMemo(() => {
     return user?.createdAt 
@@ -75,22 +76,34 @@ const Profile = () => {
       : 'May 2026';
   }, [user]);
 
-  const myExpensesPaid = useMemo(() => {
-    let expensesCount = 0;
-    let settlementsCount = 0;
-    groups.forEach(g => {
-      if (Array.isArray(g.expenses)) {
-        expensesCount += g.expenses.length;
-      }
+  const ledgerStats = useMemo(() => {
+    const historyExpenses = (history || []).filter((h) => h.type === 'expense');
+    const historyCompletedSettlements = (history || []).filter(
+      (h) =>
+        h.type === 'settlement' &&
+        ['completed', 'admin_approved'].includes((h.status || '').toLowerCase())
+    );
+
+    const groupExpensesCount = (groups || []).reduce((sum, g) => {
+      if (typeof g.expensesCount === 'number') return sum + g.expensesCount;
+      if (Array.isArray(g.expenses)) return sum + g.expenses.length;
+      return sum;
+    }, 0);
+
+    const groupSettledCount = (groups || []).reduce((sum, g) => {
+      if (typeof g.summary?.totalSettlements === 'number') return sum + g.summary.totalSettlements;
       if (Array.isArray(g.settlements)) {
-        settlementsCount += g.settlements.length;
+        return sum + g.settlements.filter((s) => ['completed', 'admin_approved'].includes((s.status || '').toLowerCase())).length;
       }
-    });
+      return sum;
+    }, 0);
+
     return {
-      expensesCount: expensesCount || Math.floor(Math.random() * 5) + 3,
-      settlementsCount: settlementsCount || Math.floor(Math.random() * 3) + 1
+      groupsCount: groups?.length || 0,
+      expensesCount: historyExpenses.length > 0 ? historyExpenses.length : groupExpensesCount,
+      settledCount: historyCompletedSettlements.length > 0 ? historyCompletedSettlements.length : groupSettledCount
     };
-  }, [groups]);
+  }, [groups, history]);
 
   const handleImageChange = async (e) => {
     const file = e.target.files?.[0];
@@ -233,15 +246,15 @@ const Profile = () => {
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-left">Quick Ledger Stats</p>
               <div className="grid grid-cols-3 gap-2">
                 <div className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-950/20 text-center">
-                  <span className="block text-xs font-black text-slate-700 dark:text-slate-350">{groups.length}</span>
+                  <span className="block text-xs font-black text-slate-700 dark:text-slate-350">{ledgerStats.groupsCount}</span>
                   <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Groups</span>
                 </div>
                 <div className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-950/20 text-center">
-                  <span className="block text-xs font-black text-slate-700 dark:text-slate-350">{myExpensesPaid.expensesCount}</span>
+                  <span className="block text-xs font-black text-slate-700 dark:text-slate-350">{ledgerStats.expensesCount}</span>
                   <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Expenses</span>
                 </div>
                 <div className="p-2.5 rounded-xl border border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-950/20 text-center">
-                  <span className="block text-xs font-black text-slate-700 dark:text-slate-350">{myExpensesPaid.settlementsCount}</span>
+                  <span className="block text-xs font-black text-slate-700 dark:text-slate-350">{ledgerStats.settledCount}</span>
                   <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Settled</span>
                 </div>
               </div>

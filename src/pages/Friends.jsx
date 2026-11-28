@@ -27,7 +27,13 @@ import {
   BellOff,
   ShieldAlert,
   Share2,
-  UserPlus
+  UserPlus,
+  Edit3,
+  Forward,
+  Copy,
+  Check,
+  ChevronDown,
+  Ban
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -48,9 +54,33 @@ const Friends = () => {
   const [sendingMsg, setSendingMsg] = useState(false);
   const [loadingChatHistory, setLoadingChatHistory] = useState(false);
 
+  // Message Actions (Edit, Delete, Forward, Persistent Clear) State
+  const [activeMessageMenu, setActiveMessageMenu] = useState(null); // { msgId, msg, isMe, openUpward, style }
+  const setActiveMessageMenuId = (val) => {
+    if (!val) setActiveMessageMenu(null);
+  };
+  const activeMessageMenuId = activeMessageMenu?.msgId || null;
+  const [editingMessage, setEditingMessage] = useState(null); // { id, originalText }
+  const [deleteConfirmMessage, setDeleteConfirmMessage] = useState(null);
+  const [isDeletingMsg, setIsDeletingMsg] = useState(false);
+  const [forwardModalMessage, setForwardModalMessage] = useState(null);
+  const [forwardSearchTerm, setForwardSearchTerm] = useState('');
+  const [selectedForwardIds, setSelectedForwardIds] = useState([]);
+  const [isForwardingMsg, setIsForwardingMsg] = useState(false);
+  const [clearingChat, setClearingChat] = useState(false);
+  const [chatToast, setChatToast] = useState(null);
+
+  const showToast = (text) => {
+    setChatToast(text);
+    setTimeout(() => {
+      setChatToast((prev) => (prev === text ? null : prev));
+    }, 2600);
+  };
+
   // Real-time metadata maps for left sidebar
   const [lastMessages, setLastMessages] = useState({});
   const [unreadCounts, setUnreadCounts] = useState({});
+  const [presenceMap, setPresenceMap] = useState({}); // { [userId]: { isOnline, lastSeen } }
 
   // Active Chat Header Tools State
   const [showMenuDropdown, setShowMenuDropdown] = useState(false);
@@ -67,6 +97,7 @@ const Friends = () => {
   const [searchError, setSearchError] = useState('');
 
   const fileInputRef = useRef(null);
+  const chatInputRef = useRef(null);
   const chatScrollRef = useRef(null);
   const socketRef = useRef(null);
   const activeFriendIdRef = useRef(null);
@@ -82,14 +113,15 @@ const Friends = () => {
     }
   };
 
-  const fetchRecentChats = async () => {
+  const fetchRecentChats = async (replace = false) => {
     try {
       const response = await api.get('/chat/recent-chats');
       if (response.data?.recentChats) {
-        setLastMessages((prev) => ({
-          ...response.data.recentChats,
-          ...prev
-        }));
+        setLastMessages((prev) =>
+          replace
+            ? response.data.recentChats
+            : { ...prev, ...response.data.recentChats }
+        );
       }
     } catch (e) {
       console.error('Error fetching recent chats metadata:', e);
@@ -227,6 +259,50 @@ const Friends = () => {
       }
     });
 
+    socket.on('directMessageUpdated', (updatedMsg) => {
+      const updatedId = updatedMsg?._id?.toString();
+      if (!updatedId) return;
+      setChatMessages((prev) => prev.map((m) => ((m._id || m.id)?.toString() === updatedId ? updatedMsg : m)));
+      fetchRecentChats(true);
+    });
+
+    socket.on('directMessageDeleted', (payload) => {
+      if (!payload?.messageId) return;
+      if (payload.scope === 'everyone' && payload.updatedMessage) {
+        setChatMessages((prev) =>
+          prev.map((m) => ((m._id || m.id)?.toString() === payload.messageId ? payload.updatedMessage : m))
+        );
+      } else {
+        setChatMessages((prev) => prev.filter((m) => (m._id || m.id)?.toString() !== payload.messageId));
+      }
+      fetchRecentChats(true);
+    });
+
+    socket.on('directChatCleared', (payload) => {
+      const clearedRecipientId = payload?.recipientId?.toString();
+      if (!clearedRecipientId) return;
+      if (activeFriendIdRef.current === clearedRecipientId) {
+        setChatMessages([]);
+      }
+      setLastMessages((prev) => {
+        const next = { ...prev };
+        delete next[clearedRecipientId];
+        return next;
+      });
+    });
+
+    socket.on('userPresenceUpdate', (payload) => {
+      const uid = payload?.userId?.toString();
+      if (!uid) return;
+      setPresenceMap((prev) => ({
+        ...prev,
+        [uid]: {
+          isOnline: Boolean(payload.isOnline),
+          lastSeen: payload.lastSeen || prev[uid]?.lastSeen || null
+        }
+      }));
+    });
+
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -237,6 +313,11 @@ const Friends = () => {
 
   // 2. Handle room joining & history fetch when activeChatFriend changes
   useEffect(() => {
+    setActiveMessageMenuId(null);
+    setEditingMessage(null);
+    setDeleteConfirmMessage(null);
+    setForwardModalMessage(null);
+
     if (activeFriendId && currentUserId) {
       fetchDirectChatHistory(activeFriendId);
 
@@ -303,7 +384,20 @@ const Friends = () => {
   const fetchFriends = async () => {
     try {
       const response = await api.get('/groups/friends');
-      setFriends(response.data);
+      const list = Array.isArray(response.data) ? response.data : [];
+      setFriends(list);
+
+      const nextPresence = {};
+      list.forEach((f) => {
+        const fId = (f._id || f.id)?.toString();
+        if (fId) {
+          nextPresence[fId] = {
+            isOnline: Boolean(f.isOnline),
+            lastSeen: f.lastSeen || null
+          };
+        }
+      });
+      setPresenceMap((prev) => ({ ...nextPresence, ...prev }));
     } catch (error) {
       console.error('Error fetching friends:', error);
     } finally {
@@ -339,6 +433,33 @@ const Friends = () => {
   const handleSendMessage = async (e) => {
     if (e) e.preventDefault();
     const trimmedText = inputMessage.trim();
+
+    // Handle Edit Mode submission
+    if (editingMessage) {
+      if (!trimmedText) return;
+      setSendingMsg(true);
+      try {
+        const res = await api.patch(`/chat/direct/message/${editingMessage.id}`, {
+          message: trimmedText
+        });
+        if (res.data?._id) {
+          setChatMessages((prev) =>
+            prev.map((m) => ((m._id || m.id)?.toString() === editingMessage.id ? res.data : m))
+          );
+          fetchRecentChats(true);
+          showToast('Message updated');
+        }
+        setEditingMessage(null);
+        setInputMessage('');
+      } catch (err) {
+        console.error('Failed to edit message:', err);
+        alert(err.response?.data?.message || 'Failed to update message.');
+      } finally {
+        setSendingMsg(false);
+      }
+      return;
+    }
+
     if (!trimmedText && !attachedFile) return;
     if (!activeFriendId || !currentUserId) return;
 
@@ -419,6 +540,181 @@ const Friends = () => {
     }
   };
 
+  // Persistent Clear Chat (survives page refresh)
+  const handleClearChat = async () => {
+    if (!activeFriendId || clearingChat) return;
+    if (!window.confirm(`Clear all chat history with ${activeChatFriend?.name || 'this contact'}? This cannot be undone.`)) {
+      return;
+    }
+
+    setClearingChat(true);
+    try {
+      await api.delete(`/chat/direct/${activeFriendId}/clear`);
+      setChatMessages([]);
+      setEditingMessage(null);
+      setActiveMessageMenuId(null);
+      setLastMessages((prev) => {
+        const next = { ...prev };
+        delete next[activeFriendId];
+        return next;
+      });
+      setUnreadCounts((prev) => ({ ...prev, [activeFriendId]: 0 }));
+      showToast('Chat cleared permanently');
+    } catch (err) {
+      console.error('Error clearing chat:', err);
+      alert(err.response?.data?.message || 'Failed to clear chat. Please try again.');
+    } finally {
+      setClearingChat(false);
+    }
+  };
+
+  const handleStartEditMessage = (msg) => {
+    const msgId = (msg._id || msg.id)?.toString();
+    if (!msgId) return;
+    setEditingMessage({
+      id: msgId,
+      originalText: msg.message || msg.text || ''
+    });
+    setInputMessage(msg.message || msg.text || '');
+    setAttachedFile(null);
+    setActiveMessageMenuId(null);
+    setTimeout(() => chatInputRef.current?.focus(), 50);
+  };
+
+  const handleDeleteMessage = async (scope) => {
+    if (!deleteConfirmMessage || isDeletingMsg) return;
+    const msgId = (deleteConfirmMessage._id || deleteConfirmMessage.id)?.toString();
+    if (!msgId) return;
+
+    // Handle unsent local temp messages
+    if (msgId.startsWith('temp_')) {
+      setChatMessages((prev) => prev.filter((m) => (m._id || m.id)?.toString() !== msgId));
+      setDeleteConfirmMessage(null);
+      return;
+    }
+
+    setIsDeletingMsg(true);
+    try {
+      const res = await api.delete(`/chat/direct/message/${msgId}?scope=${scope}`);
+      if (scope === 'everyone' && res.data?.message) {
+        setChatMessages((prev) =>
+          prev.map((m) => ((m._id || m.id)?.toString() === msgId ? res.data.message : m))
+        );
+      } else {
+        setChatMessages((prev) => prev.filter((m) => (m._id || m.id)?.toString() !== msgId));
+      }
+      if (editingMessage?.id === msgId) {
+        setEditingMessage(null);
+        setInputMessage('');
+      }
+      fetchRecentChats(true);
+      setDeleteConfirmMessage(null);
+      showToast(scope === 'everyone' ? 'Deleted for everyone' : 'Deleted for you');
+    } catch (err) {
+      console.error('Failed to delete message:', err);
+      const msg =
+        err.response?.status === 404
+          ? 'Delete endpoint not active yet (404). Please restart the Backend server.'
+          : err.response?.data?.message || 'Failed to delete message.';
+      alert(msg);
+    } finally {
+      setIsDeletingMsg(false);
+    }
+  };
+
+  const handleOpenForwardModal = (msg) => {
+    setForwardModalMessage(msg);
+    setForwardSearchTerm('');
+    setSelectedForwardIds([]);
+    setActiveMessageMenuId(null);
+  };
+
+  const handleToggleMessageMenu = (e, msg, isMe) => {
+    e.stopPropagation();
+    const msgId = (msg._id || msg.id || '').toString();
+    if (activeMessageMenu?.msgId === msgId) {
+      setActiveMessageMenu(null);
+      return;
+    }
+
+    const btnRect = e.currentTarget.getBoundingClientRect();
+    const containerRect = chatScrollRef.current?.getBoundingClientRect();
+    const bottomLimit = containerRect ? Math.min(containerRect.bottom, window.innerHeight) : window.innerHeight;
+    const spaceBelow = bottomLimit - btnRect.bottom;
+    const openUpward = spaceBelow < 185;
+    const menuWidth = 164;
+
+    const style = {
+      width: `${menuWidth}px`,
+      ...(openUpward
+        ? { bottom: `${Math.max(12, window.innerHeight - btnRect.top + 6)}px` }
+        : { top: `${btnRect.bottom + 6}px` }),
+      ...(isMe
+        ? { right: `${Math.max(12, window.innerWidth - btnRect.right)}px` }
+        : { left: `${Math.max(12, Math.min(btnRect.left, window.innerWidth - menuWidth - 12))}px` })
+    };
+
+    setActiveMessageMenu({ msgId, msg, isMe, openUpward, style });
+  };
+
+  const handleToggleForwardRecipient = (targetId) => {
+    setSelectedForwardIds((prev) =>
+      prev.includes(targetId) ? prev.filter((id) => id !== targetId) : [...prev, targetId]
+    );
+  };
+
+  const handleConfirmForward = async () => {
+    if (!forwardModalMessage || selectedForwardIds.length === 0 || isForwardingMsg) return;
+    const msgId = (forwardModalMessage._id || forwardModalMessage.id)?.toString();
+    const isTemp = !msgId || msgId.startsWith('temp_');
+
+    setIsForwardingMsg(true);
+    try {
+      const payload = isTemp
+        ? {
+            recipientIds: selectedForwardIds,
+            message: forwardModalMessage.message || forwardModalMessage.text || '',
+            messageType: forwardModalMessage.messageType || 'text',
+            mediaUrl: forwardModalMessage.mediaUrl,
+            fileName: forwardModalMessage.fileName,
+            fileSize: forwardModalMessage.fileSize
+          }
+        : {
+            messageId: msgId,
+            recipientIds: selectedForwardIds
+          };
+
+      const res = await api.post('/chat/direct/forward', payload);
+      const forwardedList = res.data?.forwardedMessages || [];
+
+      forwardedList.forEach((fwdMsg) => {
+        const recId = (fwdMsg.recipientId?._id || fwdMsg.recipientId)?.toString();
+        if (recId) {
+          setLastMessages((prev) => ({
+            ...prev,
+            [recId]: {
+              text: fwdMsg.message || (fwdMsg.mediaUrl ? '📎 Attachment' : ''),
+              timestamp: fwdMsg.timestamp || new Date().toISOString()
+            }
+          }));
+          if (recId === activeFriendId) {
+            addOrUpdateMessage(fwdMsg);
+          }
+        }
+      });
+
+      const count = selectedForwardIds.length;
+      setForwardModalMessage(null);
+      setSelectedForwardIds([]);
+      showToast(`Forwarded to ${count} ${count === 1 ? 'contact' : 'contacts'}`);
+    } catch (err) {
+      console.error('Failed to forward message:', err);
+      alert(err.response?.data?.message || 'Failed to forward message.');
+    } finally {
+      setIsForwardingMsg(false);
+    }
+  };
+
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -436,24 +732,92 @@ const Friends = () => {
     reader.readAsDataURL(file);
   };
 
+  const getCalendarDayDiff = (date) => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const targetStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    return Math.round((todayStart - targetStart) / (1000 * 60 * 60 * 24));
+  };
+
+  const getCalendarDayKey = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
+  const formatDDMMYYYY = (date) => {
+    const dd = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
+  // WhatsApp-style date pill label inside chat history
+  const formatChatDateDivider = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return '';
+    const diffDays = getCalendarDayDiff(date);
+
+    if (diffDays <= 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays >= 2 && diffDays <= 6) {
+      return date.toLocaleDateString('en-US', { weekday: 'long' });
+    }
+    return formatDDMMYYYY(date);
+  };
+
+  // WhatsApp-style sidebar last message timestamp
   const formatMessageTime = (timestamp) => {
     if (!timestamp) return '';
     const date = new Date(timestamp);
     if (isNaN(date.getTime())) return '';
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
-    
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    const isYesterday = date.toDateString() === yesterday.toDateString();
+    const diffDays = getCalendarDayDiff(date);
 
-    if (isToday) {
+    if (diffDays <= 0) {
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (isYesterday) {
-      return 'Yesterday';
-    } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     }
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays >= 2 && diffDays <= 6) {
+      return date.toLocaleDateString('en-US', { weekday: 'long' });
+    }
+    return formatDDMMYYYY(date);
+  };
+
+  // WhatsApp-style Online / Last Seen presence formatter
+  const getContactPresence = (friendObj) => {
+    const fId = (friendObj?._id || friendObj?.id)?.toString();
+    const live = fId ? presenceMap[fId] : null;
+    const isOnline = live ? live.isOnline : Boolean(friendObj?.isOnline);
+    const rawLastSeen = live?.lastSeen || friendObj?.lastSeen;
+
+    if (isOnline) {
+      return { isOnline: true, label: 'Online' };
+    }
+    if (!rawLastSeen) {
+      return { isOnline: false, label: 'Offline' };
+    }
+
+    const lsDate = new Date(rawLastSeen);
+    if (isNaN(lsDate.getTime())) {
+      return { isOnline: false, label: 'Offline' };
+    }
+
+    const diffDays = getCalendarDayDiff(lsDate);
+    const timePart = lsDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (diffDays <= 0) {
+      return { isOnline: false, label: `last seen today at ${timePart}` };
+    }
+    if (diffDays === 1) {
+      return { isOnline: false, label: `last seen yesterday at ${timePart}` };
+    }
+    if (diffDays >= 2 && diffDays <= 6) {
+      const weekday = lsDate.toLocaleDateString('en-US', { weekday: 'long' });
+      return { isOnline: false, label: `last seen ${weekday} at ${timePart}` };
+    }
+    return { isOnline: false, label: `last seen ${formatDDMMYYYY(lsDate)}` };
   };
 
   // Sort friends by most recent message timestamp (descending - WhatsApp style)
@@ -611,6 +975,7 @@ const Friends = () => {
                 const lastMsg = lastMessages[friendId];
                 const unreadCount = unreadCounts[friendId] || 0;
                 const timeString = formatMessageTime(lastMsg?.timestamp);
+                const friendPresence = getContactPresence(friend);
 
                 return (
                   <div
@@ -628,7 +993,9 @@ const Friends = () => {
                         alt={friend.name}
                         className="w-12 h-12 rounded-2xl object-cover border border-slate-200/80 dark:border-slate-700 shadow-xs"
                       />
-                      <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 ring-2 ring-white dark:ring-slate-950 rounded-full" title="Online" />
+                      {friendPresence.isOnline && (
+                        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 ring-2 ring-white dark:ring-slate-950 rounded-full" title="Online" />
+                      )}
                     </div>
 
                     {/* Contact Name & Last Message */}
@@ -692,34 +1059,49 @@ const Friends = () => {
                   </button>
 
                   {/* Header Profile Click */}
-                  <div
-                    onClick={() => setSelectedFriendProfile(activeChatFriend)}
-                    className="flex items-center gap-2 sm:gap-3 cursor-pointer group min-w-0"
-                    title="Click to view member profile"
-                  >
-                    <div className="relative shrink-0">
-                      <img
-                        src={activeChatFriend.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(activeChatFriend.name || 'User')}&background=random`}
-                        alt={activeChatFriend.name}
-                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 group-hover:scale-105 transition-transform"
-                      />
-                      <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-emerald-500 ring-2 ring-white dark:ring-slate-900 rounded-full" />
-                    </div>
+                  {(() => {
+                    const activePresence = getContactPresence(activeChatFriend);
+                    return (
+                      <div
+                        onClick={() => setSelectedFriendProfile(activeChatFriend)}
+                        className="flex items-center gap-2 sm:gap-3 cursor-pointer group min-w-0"
+                        title="Click to view member profile"
+                      >
+                        <div className="relative shrink-0">
+                          <img
+                            src={activeChatFriend.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(activeChatFriend.name || 'User')}&background=random`}
+                            alt={activeChatFriend.name}
+                            className="w-8 h-8 sm:w-10 sm:h-10 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 group-hover:scale-105 transition-transform"
+                          />
+                          {activePresence.isOnline && (
+                            <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-emerald-500 ring-2 ring-white dark:ring-slate-900 rounded-full" />
+                          )}
+                        </div>
 
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <h3 className="font-extrabold text-xs sm:text-base text-slate-800 dark:text-white group-hover:text-primary-600 transition-colors truncate max-w-[100px] xs:max-w-[140px] sm:max-w-none">
-                          {activeChatFriend.name || 'Unknown User'}
-                        </h3>
-                        <span className="hidden sm:inline-flex px-1.5 py-0.2 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold rounded-md shrink-0">
-                          Online
-                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <h3 className="font-extrabold text-xs sm:text-base text-slate-800 dark:text-white group-hover:text-primary-600 transition-colors truncate max-w-[110px] xs:max-w-[150px] sm:max-w-none">
+                              {activeChatFriend.name || 'Unknown User'}
+                            </h3>
+                            {activePresence.isOnline && (
+                              <span className="hidden sm:inline-flex px-1.5 py-0.2 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold rounded-md shrink-0">
+                                Online
+                              </span>
+                            )}
+                          </div>
+                          <p className={`text-[10px] sm:text-[11px] font-medium truncate max-w-[140px] xs:max-w-[180px] sm:max-w-none ${
+                            activePresence.isOnline
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-slate-400'
+                          }`}>
+                            {activePresence.isOnline
+                              ? (activeChatFriend.mobile ? `Online • ${activeChatFriend.mobile}` : 'Online')
+                              : activePresence.label}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate max-w-[100px] xs:max-w-[140px] sm:max-w-none">
-                        {activeChatFriend.mobile ? `Phone: ${activeChatFriend.mobile}` : activeChatFriend.email || 'SmartSplit Contact'}
-                      </p>
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
 
                 {/* WhatsApp Web Header Action Tools Bar */}
@@ -873,14 +1255,13 @@ const Friends = () => {
                             <button
                               onClick={() => {
                                 setShowMenuDropdown(false);
-                                if (window.confirm(`Clear chat history with ${activeChatFriend.name || 'this contact'}?`)) {
-                                  setChatMessages([]);
-                                }
+                                handleClearChat();
                               }}
-                              className="w-full px-4 py-2.5 text-left text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2.5 transition-colors"
+                              disabled={clearingChat}
+                              className="w-full px-4 py-2.5 text-left text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2.5 transition-colors disabled:opacity-50"
                             >
-                              <Trash2 size={15} />
-                              <span>Clear chat</span>
+                              {clearingChat ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                              <span>{clearingChat ? 'Clearing...' : 'Clear chat'}</span>
                             </button>
 
                             <button
@@ -955,6 +1336,8 @@ const Friends = () => {
               {/* Chat Message Scrollable Body */}
               <div
                 ref={chatScrollRef}
+                onScroll={() => activeMessageMenu && setActiveMessageMenu(null)}
+                onClick={() => activeMessageMenu && setActiveMessageMenu(null)}
                 className="flex-1 p-4 sm:p-6 overflow-y-auto no-scrollbar space-y-4 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] dark:bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]"
               >
                 <div className="flex justify-center my-1">
@@ -972,16 +1355,20 @@ const Friends = () => {
                     No messages yet. Send a message to start chatting!
                   </div>
                 ) : (
-                  chatMessages
-                    .filter((msg) => {
+                  (() => {
+                    const visibleMsgs = chatMessages.filter((msg) => {
                       if (!chatSearchTerm.trim()) return true;
+                      if (msg.isDeletedForEveryone) return false;
                       const text = (msg.message || msg.text || '').toLowerCase();
                       return text.includes(chatSearchTerm.toLowerCase());
-                    })
-                    .map((msg) => {
-                      const currentUserId = (user?._id || user?.id)?.toString();
+                    });
+
+                    return visibleMsgs.map((msg, idx) => {
+                      const msgId = (msg._id || msg.id || '').toString();
+                      const currentUserIdStr = (user?._id || user?.id)?.toString();
                       const msgSenderId = (msg.senderId?._id || msg.senderId || msg.sender)?.toString();
-                      const isMe = msg.sender === 'me' || (currentUserId && msgSenderId && currentUserId === msgSenderId);
+                      const isMe = msg.sender === 'me' || (currentUserIdStr && msgSenderId && currentUserIdStr === msgSenderId);
+                      const isDeleted = Boolean(msg.isDeletedForEveryone);
                       const text = msg.message || msg.text;
                       const mediaUrl = msg.mediaUrl || msg.file?.url;
                       const fileName = msg.fileName || msg.file?.name;
@@ -989,57 +1376,144 @@ const Friends = () => {
                       const timeStr = msg.timestamp
                         ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                         : msg.timestamp;
+                      const isMenuOpen = activeMessageMenuId === msgId;
+
+                      const currentDayKey = getCalendarDayKey(msg.timestamp);
+                      const prevDayKey = idx > 0 ? getCalendarDayKey(visibleMsgs[idx - 1].timestamp) : '';
+                      const showDateDivider = Boolean(currentDayKey) && currentDayKey !== prevDayKey;
 
                       return (
-                        <div
-                          key={msg._id || msg.id || Math.random()}
-                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-                        >
-                          <div className={`max-w-[85%] sm:max-w-[75%] p-3.5 rounded-2xl shadow-xs text-sm relative ${isMe
-                              ? 'bg-primary-600 text-white rounded-br-none'
-                              : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-800 rounded-bl-none'
-                            }`}>
-                            {/* Sender Name tag for recipient messages */}
-                            {!isMe && (
-                              <p className="text-[11px] font-extrabold text-primary-600 dark:text-primary-400 mb-1">
-                                {msg.senderName || activeChatFriend.name}
-                              </p>
-                            )}
-
-                            {/* File / Media Attachment Preview */}
-                            {mediaUrl && (
-                              <div className="mb-2 p-2 bg-black/10 dark:bg-white/10 rounded-xl overflow-hidden">
-                                {msg.messageType === 'image' || (mediaUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)) ? (
-                                  <a href={mediaUrl} target="_blank" rel="noopener noreferrer">
-                                    <img src={mediaUrl} alt="Attachment" className="max-h-60 w-full object-cover rounded-lg" />
-                                  </a>
-                                ) : (
-                                  <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-2">
-                                    <FileText size={20} />
-                                    <div className="min-w-0 flex-1">
-                                      <p className="font-bold text-xs truncate">{fileName || 'Attached Document'}</p>
-                                      {fileSize && <p className="text-[10px] opacity-80">{fileSize}</p>}
-                                    </div>
-                                  </a>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Message Text */}
-                            {text && (
-                              <p className="whitespace-pre-wrap leading-relaxed font-medium">{text}</p>
-                            )}
-
-                            {/* Time & Read Status Bar */}
-                            <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${isMe ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
-                              }`}>
-                              <span>{timeStr}</span>
-                              {isMe && <CheckCheck size={13} className="text-white" />}
+                        <React.Fragment key={msgId || idx}>
+                          {/* WhatsApp-Style Centered Date Divider (Today / Yesterday / Weekday / DD/MM/YYYY) */}
+                          {showDateDivider && (
+                            <div className="flex justify-center my-2.5">
+                              <span className="px-3.5 py-1 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm text-[11px] font-bold text-slate-500 dark:text-slate-400 rounded-lg border border-slate-200/80 dark:border-slate-800 shadow-2xs">
+                                {formatChatDateDivider(msg.timestamp)}
+                              </span>
                             </div>
+                          )}
+
+                          <div className={`group/msg flex items-center gap-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                            {/* Quick Forward Arrow Button on LEFT for outgoing messages (WhatsApp style) */}
+                            {isMe && !isDeleted && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenForwardModal(msg)}
+                                title="Forward message"
+                                className="w-7 h-7 rounded-full bg-white/95 dark:bg-slate-800/95 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 text-slate-500 hover:text-emerald-600 dark:text-slate-300 dark:hover:text-emerald-400 border border-slate-200/80 dark:border-slate-700/80 shadow-sm flex items-center justify-center shrink-0 transition-all cursor-pointer opacity-75 sm:opacity-0 sm:group-hover/msg:opacity-100 active:scale-95"
+                              >
+                                <Forward size={13} />
+                              </button>
+                            )}
+
+                            <div
+                              className={`max-w-[80%] sm:max-w-[72%] p-3.5 pr-8 rounded-2xl shadow-xs text-sm relative transition-all ${
+                                isDeleted
+                                  ? 'bg-slate-200/80 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 border border-slate-300/60 dark:border-slate-700/60'
+                                  : isMe
+                                  ? 'bg-primary-600 text-white rounded-br-none'
+                                  : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-800 rounded-bl-none'
+                              }`}
+                            >
+                              {/* Per-Message Action Menu Trigger (Edit / Forward / Copy / Delete) */}
+                              <div
+                                className={`absolute top-2 right-2 z-20 ${
+                                  isMenuOpen ? 'opacity-100' : 'opacity-75 sm:opacity-0 sm:group-hover/msg:opacity-100'
+                                } transition-opacity`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleToggleMessageMenu(e, msg, isMe)}
+                                  title="Message actions"
+                                  className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                                    isMe && !isDeleted
+                                      ? 'hover:bg-white/20 text-white/90'
+                                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                                  }`}
+                                >
+                                  <ChevronDown size={14} />
+                                </button>
+                              </div>
+
+                              {/* Forwarded Badge */}
+                              {msg.isForwarded && !isDeleted && (
+                                <div className={`flex items-center gap-1 text-[10px] font-bold italic mb-1 ${
+                                  isMe ? 'text-white/75' : 'text-slate-400'
+                                }`}>
+                                  <Forward size={11} />
+                                  <span>Forwarded</span>
+                                </div>
+                              )}
+
+                              {/* Sender Name tag for recipient messages */}
+                              {!isMe && !isDeleted && (
+                                <p className="text-[11px] font-extrabold text-primary-600 dark:text-primary-400 mb-1">
+                                  {msg.senderName || activeChatFriend.name}
+                                </p>
+                              )}
+
+                              {isDeleted ? (
+                                <p className="flex items-center gap-1.5 italic text-xs font-medium py-0.5">
+                                  <Ban size={13} className="shrink-0 opacity-70" />
+                                  <span>This message was deleted</span>
+                                </p>
+                              ) : (
+                                <>
+                                  {/* File / Media Attachment Preview */}
+                                  {mediaUrl && (
+                                    <div className="mb-2 p-2 bg-black/10 dark:bg-white/10 rounded-xl overflow-hidden">
+                                      {msg.messageType === 'image' || (mediaUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)) ? (
+                                        <a href={mediaUrl} target="_blank" rel="noopener noreferrer">
+                                          <img src={mediaUrl} alt="Attachment" className="max-h-60 w-full object-cover rounded-lg" />
+                                        </a>
+                                      ) : (
+                                        <a href={mediaUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-2">
+                                          <FileText size={20} />
+                                          <div className="min-w-0 flex-1">
+                                            <p className="font-bold text-xs truncate">{fileName || 'Attached Document'}</p>
+                                            {fileSize && <p className="text-[10px] opacity-80">{fileSize}</p>}
+                                          </div>
+                                        </a>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Message Text */}
+                                  {text && (
+                                    <p className="whitespace-pre-wrap leading-relaxed font-medium">{text}</p>
+                                  )}
+                                </>
+                              )}
+
+                              {/* Time, Edited Label & Read Status Bar */}
+                              <div className={`flex items-center justify-end gap-1.5 mt-1 text-[10px] ${
+                                isMe && !isDeleted ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
+                              }`}>
+                                {msg.isEdited && !isDeleted && (
+                                  <span className="italic opacity-80">Edited</span>
+                                )}
+                                <span>{timeStr}</span>
+                                {isMe && !isDeleted && <CheckCheck size={13} className="text-white" />}
+                              </div>
+                            </div>
+
+                            {/* Quick Forward Arrow Button on RIGHT for incoming messages (WhatsApp style) */}
+                            {!isMe && !isDeleted && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenForwardModal(msg)}
+                                title="Forward message"
+                                className="w-7 h-7 rounded-full bg-white/95 dark:bg-slate-800/95 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 text-slate-500 hover:text-emerald-600 dark:text-slate-300 dark:hover:text-emerald-400 border border-slate-200/80 dark:border-slate-700/80 shadow-sm flex items-center justify-center shrink-0 transition-all cursor-pointer opacity-75 sm:opacity-0 sm:group-hover/msg:opacity-100 active:scale-95"
+                              >
+                                <Forward size={13} />
+                              </button>
+                            )}
                           </div>
-                        </div>
+                        </React.Fragment>
                       );
-                    })
+                    });
+                  })()
                 )}
               </div>
 
@@ -1066,6 +1540,34 @@ const Friends = () => {
                 </div>
               )}
 
+              {/* Edit Message Banner */}
+              {editingMessage && (
+                <div className="px-4 py-2 bg-primary-50 dark:bg-primary-950/40 border-t border-primary-200/70 dark:border-primary-900/50 flex items-center justify-between gap-3 shrink-0">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Edit3 size={15} className="text-primary-600 dark:text-primary-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-primary-600 dark:text-primary-400">
+                        Editing Message
+                      </p>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 truncate">
+                        {editingMessage.originalText}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingMessage(null);
+                      setInputMessage('');
+                    }}
+                    className="p-1.5 hover:bg-primary-100 dark:hover:bg-primary-900/50 rounded-full text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+                    title="Cancel Edit (Esc)"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              )}
+
               {/* WhatsApp Web Enterprise Unified Pill Chat Input Bar */}
               <form onSubmit={handleSendMessage} className="p-2 sm:p-3.5 bg-white dark:bg-slate-900 border-t border-slate-200/90 dark:border-slate-800/90 shrink-0 z-10">
                 <input
@@ -1079,34 +1581,49 @@ const Friends = () => {
                 <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-100 dark:bg-slate-800/90 rounded-2xl sm:rounded-full px-3 sm:px-4 py-1 sm:py-1.5 border border-slate-200/80 dark:border-slate-700/80 focus-within:ring-2 focus-within:ring-primary-500/20 focus-within:border-primary-500/80 focus-within:bg-white dark:focus-within:bg-slate-800 transition-all shadow-xs">
                   {/* Text Input Field */}
                   <input
+                    ref={chatInputRef}
                     type="text"
-                    placeholder={`Message ${activeChatFriend.name || 'Friend'}...`}
+                    placeholder={editingMessage ? 'Edit your message...' : `Message ${activeChatFriend.name || 'Friend'}...`}
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape' && editingMessage) {
+                        setEditingMessage(null);
+                        setInputMessage('');
+                      }
+                    }}
                     style={{ outline: 'none', boxShadow: 'none' }}
                     className="flex-1 min-w-0 bg-transparent py-1.5 sm:py-2 px-1 text-xs sm:text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 border-none outline-none focus:outline-none focus:ring-0 focus:border-none shadow-none"
                   />
 
                   {/* Right Side Buttons Container inside Input Box */}
                   <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                    {/* File Attachment Button */}
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      title="Attach File or Photo"
-                      className="p-1.5 sm:p-2 text-slate-500 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 rounded-full transition-all active:scale-95 flex items-center justify-center"
-                    >
-                      <Paperclip size={17} />
-                    </button>
+                    {/* File Attachment Button (hidden while editing) */}
+                    {!editingMessage && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        title="Attach File or Photo"
+                        className="p-1.5 sm:p-2 text-slate-500 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 rounded-full transition-all active:scale-95 flex items-center justify-center"
+                      >
+                        <Paperclip size={17} />
+                      </button>
+                    )}
 
-                    {/* Send Message Button */}
+                    {/* Send / Save Edit Button */}
                     <button
                       type="submit"
                       disabled={sendingMsg || (!inputMessage.trim() && !attachedFile)}
-                      title="Send Message"
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary-600 hover:bg-primary-700 disabled:opacity-35 disabled:hover:bg-primary-600 text-white transition-all shadow-md shadow-primary-500/20 shrink-0 active:scale-95 flex items-center justify-center"
+                      title={editingMessage ? 'Save Changes' : 'Send Message'}
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary-600 hover:bg-primary-700 disabled:opacity-35 disabled:hover:bg-primary-600 text-white transition-all shadow-md shadow-primary-500/20 shrink-0 active:scale-95 flex items-center justify-center cursor-pointer"
                     >
-                      {sendingMsg ? <Loader2 size={16} className="animate-spin" /> : <Send size={15} className="ml-0.5" />}
+                      {sendingMsg ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : editingMessage ? (
+                        <Check size={16} />
+                      ) : (
+                        <Send size={15} className="ml-0.5" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1160,23 +1677,37 @@ const Friends = () => {
               {/* Contact Info Body */}
               <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-6 text-center">
                 {/* Large Center Circular Avatar */}
-                <div className="flex flex-col items-center">
-                  <div className="relative inline-block mb-4">
-                    <img
-                      src={selectedFriendProfile.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedFriendProfile.name || 'User')}&background=random`}
-                      alt={selectedFriendProfile.name}
-                      className="w-36 h-36 rounded-full border-4 border-white dark:border-slate-800 shadow-xl object-cover"
-                    />
-                    <div className="absolute bottom-2 right-2 w-5 h-5 bg-emerald-500 ring-4 ring-white dark:ring-slate-900 rounded-full shadow-md" title="Active" />
-                  </div>
+                {(() => {
+                  const profilePresence = getContactPresence(selectedFriendProfile);
+                  return (
+                    <div className="flex flex-col items-center">
+                      <div className="relative inline-block mb-4">
+                        <img
+                          src={selectedFriendProfile.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedFriendProfile.name || 'User')}&background=random`}
+                          alt={selectedFriendProfile.name}
+                          className="w-36 h-36 rounded-full border-4 border-white dark:border-slate-800 shadow-xl object-cover"
+                        />
+                        {profilePresence.isOnline && (
+                          <div className="absolute bottom-2 right-2 w-5 h-5 bg-emerald-500 ring-4 ring-white dark:ring-slate-900 rounded-full shadow-md" title="Online" />
+                        )}
+                      </div>
 
-                  <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                    {selectedFriendProfile.name || 'Unknown User'}
-                  </h2>
-                  <p className="text-slate-500 dark:text-slate-400 text-sm font-semibold mt-0.5">
-                    {selectedFriendProfile.mobile ? selectedFriendProfile.mobile : selectedFriendProfile.email || 'SmartSplit Contact'}
-                  </p>
-                </div>
+                      <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                        {selectedFriendProfile.name || 'Unknown User'}
+                      </h2>
+                      <p className="text-slate-500 dark:text-slate-400 text-sm font-semibold mt-0.5">
+                        {selectedFriendProfile.mobile ? selectedFriendProfile.mobile : selectedFriendProfile.email || 'SmartSplit Contact'}
+                      </p>
+                      <span className={`mt-2 px-3 py-0.5 rounded-full text-[11px] font-bold ${
+                        profilePresence.isOnline
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                      }`}>
+                        {profilePresence.label}
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* WhatsApp Action Buttons Bar (Voice, Video, Search) */}
                 <div className="flex items-center justify-center gap-6 py-2">
@@ -1480,6 +2011,298 @@ const Friends = () => {
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+
+      {/* Delete Message Modal (Delete for me / Delete for everyone) */}
+      <AnimatePresence>
+        {deleteConfirmMessage && (() => {
+          const delSenderId = (deleteConfirmMessage.senderId?._id || deleteConfirmMessage.senderId || deleteConfirmMessage.sender)?.toString();
+          const isMyMsg = deleteConfirmMessage.sender === 'me' || (currentUserId && delSenderId && currentUserId === delSenderId);
+          const canDeleteForEveryone = isMyMsg && !deleteConfirmMessage.isDeletedForEveryone;
+
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+              onClick={() => !isDeletingMsg && setDeleteConfirmMessage(null)}
+            >
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-5 space-y-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                    <Trash2 size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-slate-900 dark:text-white">Delete Message?</h3>
+                    <p className="text-xs text-slate-400">Choose how you want to delete this message.</p>
+                  </div>
+                </div>
+
+                {!deleteConfirmMessage.isDeletedForEveryone && (deleteConfirmMessage.message || deleteConfirmMessage.text) && (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 line-clamp-2 italic">
+                    "{deleteConfirmMessage.message || deleteConfirmMessage.text}"
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2 pt-1">
+                  {canDeleteForEveryone && (
+                    <button
+                      type="button"
+                      disabled={isDeletingMsg}
+                      onClick={() => handleDeleteMessage('everyone')}
+                      className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      {isDeletingMsg ? 'Deleting...' : 'Delete for everyone'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={isDeletingMsg}
+                    onClick={() => handleDeleteMessage('me')}
+                    className="w-full py-2.5 px-4 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Delete for me
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDeletingMsg}
+                    onClick={() => setDeleteConfirmMessage(null)}
+                    className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* Forward Message Modal */}
+      <AnimatePresence>
+        {forwardModalMessage && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+            onClick={() => !isForwardingMsg && setForwardModalMessage(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+            >
+              <div className="px-5 py-4 border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-950/40 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                    <Forward size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">Forward Message</h3>
+                    <p className="text-[11px] font-bold text-slate-400">Select one or more contacts</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setForwardModalMessage(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3 flex-1 overflow-y-auto no-scrollbar">
+                {/* Preview of message to forward */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-200/70 dark:border-slate-800 text-xs">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                    Message Preview
+                  </span>
+                  <p className="text-slate-700 dark:text-slate-200 font-medium line-clamp-2">
+                    {forwardModalMessage.message || forwardModalMessage.text || (forwardModalMessage.mediaUrl ? `📎 ${forwardModalMessage.fileName || 'Attachment'}` : '')}
+                  </p>
+                </div>
+
+                {/* Search Contacts */}
+                <div className="relative">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search contacts to forward..."
+                    value={forwardSearchTerm}
+                    onChange={(e) => setForwardSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-white outline-none focus:border-primary-500"
+                  />
+                </div>
+
+                {/* Contacts List */}
+                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 max-h-60 overflow-y-auto no-scrollbar">
+                  {sortedFriends
+                    .filter((f) => {
+                      if (!forwardSearchTerm.trim()) return true;
+                      const q = forwardSearchTerm.toLowerCase();
+                      return (f.name || '').toLowerCase().includes(q) || (f.email || '').toLowerCase().includes(q);
+                    })
+                    .map((friend) => {
+                      const fId = (friend._id || friend.id)?.toString();
+                      const isChecked = selectedForwardIds.includes(fId);
+
+                      return (
+                        <button
+                          key={fId}
+                          type="button"
+                          onClick={() => handleToggleForwardRecipient(fId)}
+                          className={`w-full py-2.5 px-2 flex items-center justify-between gap-3 text-left transition-colors rounded-xl cursor-pointer ${
+                            isChecked ? 'bg-emerald-50/70 dark:bg-emerald-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <img
+                              src={friend.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(friend.name || 'User')}&background=random`}
+                              alt={friend.name}
+                              className="w-9 h-9 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{friend.name}</p>
+                              <p className="text-[10px] text-slate-400 truncate">{friend.email || friend.mobile || 'Contact'}</p>
+                            </div>
+                          </div>
+                          <div
+                            className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                              isChecked
+                                ? 'bg-emerald-600 border-emerald-600 text-white'
+                                : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                            }`}
+                          >
+                            {isChecked && <Check size={12} />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={isForwardingMsg}
+                  onClick={() => setForwardModalMessage(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isForwardingMsg || selectedForwardIds.length === 0}
+                  onClick={handleConfirmForward}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  {isForwardingMsg ? <Loader2 size={14} className="animate-spin" /> : <Forward size={14} />}
+                  <span>
+                    {isForwardingMsg
+                      ? 'Forwarding...'
+                      : `Forward${selectedForwardIds.length > 0 ? ` (${selectedForwardIds.length})` : ''}`}
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Transient Feedback Toast */}
+      <AnimatePresence>
+        {chatToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 bg-slate-900 dark:bg-slate-800 text-white text-xs font-bold rounded-full shadow-xl border border-slate-700 flex items-center gap-2"
+          >
+            <Check size={14} className="text-emerald-400" />
+            <span>{chatToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Viewport-Aware Floating Message Action Menu (never clipped by scroll container) */}
+      <AnimatePresence>
+        {activeMessageMenu && (() => {
+          const { msg, isMe, openUpward, style } = activeMessageMenu;
+          const isDeleted = Boolean(msg.isDeletedForEveryone);
+          const text = msg.message || msg.text;
+          const canEdit = isMe && !isDeleted && Boolean(text || msg.messageType === 'text');
+
+          return (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setActiveMessageMenu(null)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: openUpward ? 6 : -6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: openUpward ? 6 : -6 }}
+                transition={{ duration: 0.12 }}
+                style={style}
+                onClick={(e) => e.stopPropagation()}
+                className="fixed z-50 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200/90 dark:border-slate-700/80 py-1 text-slate-800 dark:text-slate-100"
+              >
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => handleStartEditMessage(msg)}
+                    className="w-full px-3.5 py-2 text-left text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Edit3 size={13} className="text-primary-500" />
+                    <span>Edit</span>
+                  </button>
+                )}
+
+                {!isDeleted && (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenForwardModal(msg)}
+                    className="w-full px-3.5 py-2 text-left text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Forward size={13} className="text-emerald-500" />
+                    <span>Forward</span>
+                  </button>
+                )}
+
+                {text && !isDeleted && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(text);
+                      setActiveMessageMenu(null);
+                      showToast('Copied to clipboard');
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Copy size={13} className="text-slate-400" />
+                    <span>Copy</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteConfirmMessage(msg);
+                    setActiveMessageMenu(null);
+                  }}
+                  className="w-full px-3.5 py-2 text-left text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete</span>
+                </button>
+              </motion.div>
+            </>
+          );
+        })()}
       </AnimatePresence>
     </div>
   );

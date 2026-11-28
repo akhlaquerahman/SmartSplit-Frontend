@@ -1,5 +1,16 @@
-import React, { useMemo } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import React, { useMemo, useState } from 'react';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 import { motion } from 'framer-motion';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
@@ -21,36 +32,161 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
+    const point = payload[0]?.payload;
+    const displayLabel = point?.fullLabel || label || payload[0].name;
+
     return (
-      <div className="bg-white dark:bg-slate-800 p-3 rounded-xl shadow-xl border dark:border-slate-700 text-sm">
-        <p className="font-bold text-slate-700 dark:text-slate-300 mb-1">{label || payload[0].name}</p>
+      <div className="bg-white dark:bg-slate-800 p-3 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 text-sm">
+        <p className="font-bold text-slate-700 dark:text-slate-300 mb-1">{displayLabel}</p>
         {payload.map((entry, index) => (
           <p key={index} style={{ color: entry.color }} className="font-black text-base">
-            ₹{entry.value.toFixed(2)}
+            ₹{Number(entry.value || 0).toFixed(2)}
           </p>
         ))}
+        {typeof point?.count === 'number' && (
+          <p className="text-[11px] font-medium text-slate-400 mt-0.5">
+            {point.count} {point.count === 1 ? 'expense' : 'expenses'}
+          </p>
+        )}
       </div>
     );
   }
   return null;
 };
 
-const ChartsWidget = ({ expenses }) => {
+const getLocalDateKey = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const getWeekStart = (date) => {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = d.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diffToMonday);
+  return d;
+};
+
+const TIMEFRAME_META = {
+  day: { label: 'Day', subtitle: 'Daily expenses over the last 7 days' },
+  week: { label: 'Week', subtitle: 'Weekly expenses over the last 8 weeks' },
+  month: { label: 'Month', subtitle: 'Monthly expenses over the last 12 months' }
+};
+
+const ChartsWidget = ({ expenses = [] }) => {
+  const [timeframe, setTimeframe] = useState('day'); // 'day' | 'week' | 'month'
+
   const trendData = useMemo(() => {
-    if (!expenses || expenses.length === 0) {
-      return [
-        { name: 'Mon', value: 0 }, { name: 'Tue', value: 0 }, { name: 'Wed', value: 0 },
-        { name: 'Thu', value: 0 }, { name: 'Fri', value: 0 }, { name: 'Sat', value: 0 }, { name: 'Sun', value: 0 }
-      ];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    if (timeframe === 'day') {
+      const buckets = [];
+      const bucketMap = new Map();
+
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const key = getLocalDateKey(d);
+        const entry = {
+          key,
+          name: i === 0 ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short' }),
+          fullLabel: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }),
+          value: 0,
+          count: 0
+        };
+        buckets.push(entry);
+        bucketMap.set(key, entry);
+      }
+
+      (expenses || []).forEach((exp) => {
+        const rawDate = new Date(exp.date || exp.createdAt);
+        if (Number.isNaN(rawDate.getTime())) return;
+        const bucket = bucketMap.get(getLocalDateKey(rawDate));
+        if (bucket) {
+          bucket.value = Number((bucket.value + (Number(exp.amount) || 0)).toFixed(2));
+          bucket.count += 1;
+        }
+      });
+
+      return buckets;
     }
-    const grouped = expenses.slice(0, 30).reduce((acc, curr) => {
-      const date = new Date(curr.createdAt).toLocaleDateString('en-US', { weekday: 'short' });
-      acc[date] = (acc[date] || 0) + (curr.amount || 0);
-      return acc;
-    }, {});
-    const data = Object.keys(grouped).map(key => ({ name: key, value: grouped[key] }));
-    return data.length > 0 ? data : [{ name: 'Today', value: 0 }];
-  }, [expenses]);
+
+    if (timeframe === 'week') {
+      const currentWeekStart = getWeekStart(today);
+      const buckets = [];
+      const bucketMap = new Map();
+
+      for (let i = 7; i >= 0; i--) {
+        const start = new Date(currentWeekStart);
+        start.setDate(currentWeekStart.getDate() - i * 7);
+        const end = new Date(start);
+        end.setDate(start.getDate() + 6);
+
+        const key = getLocalDateKey(start);
+        const entry = {
+          key,
+          name: i === 0 ? 'This Wk' : start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          fullLabel: `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`,
+          value: 0,
+          count: 0
+        };
+        buckets.push(entry);
+        bucketMap.set(key, entry);
+      }
+
+      (expenses || []).forEach((exp) => {
+        const rawDate = new Date(exp.date || exp.createdAt);
+        if (Number.isNaN(rawDate.getTime())) return;
+        const wkStart = getWeekStart(rawDate);
+        const bucket = bucketMap.get(getLocalDateKey(wkStart));
+        if (bucket) {
+          bucket.value = Number((bucket.value + (Number(exp.amount) || 0)).toFixed(2));
+          bucket.count += 1;
+        }
+      });
+
+      return buckets;
+    }
+
+    // Monthly view (last 12 months)
+    const buckets = [];
+    const bucketMap = new Map();
+
+    for (let i = 11; i >= 0; i--) {
+      const mDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const key = `${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, '0')}`;
+      const entry = {
+        key,
+        name: mDate.toLocaleDateString('en-US', { month: 'short' }),
+        fullLabel: mDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        value: 0,
+        count: 0
+      };
+      buckets.push(entry);
+      bucketMap.set(key, entry);
+    }
+
+    (expenses || []).forEach((exp) => {
+      const rawDate = new Date(exp.date || exp.createdAt);
+      if (Number.isNaN(rawDate.getTime())) return;
+      const key = `${rawDate.getFullYear()}-${String(rawDate.getMonth() + 1).padStart(2, '0')}`;
+      const bucket = bucketMap.get(key);
+      if (bucket) {
+        bucket.value = Number((bucket.value + (Number(exp.amount) || 0)).toFixed(2));
+        bucket.count += 1;
+      }
+    });
+
+    return buckets;
+  }, [expenses, timeframe]);
+
+  const periodTotal = useMemo(
+    () => trendData.reduce((sum, item) => sum + (Number(item.value) || 0), 0),
+    [trendData]
+  );
 
   const categoryData = useMemo(() => {
     if (!expenses || expenses.length === 0) {
@@ -76,13 +212,42 @@ const ChartsWidget = ({ expenses }) => {
         animate={{ opacity: 1, y: 0 }}
         className="lg:col-span-2 bg-white dark:bg-[#16181d] p-5 md:p-6 rounded-2xl border dark:border-slate-800/60 shadow-sm"
       >
-        <div className="mb-6">
-          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Spending Trends</h3>
-          <p className="text-sm text-slate-500">Your expenses over recent days</p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+          <div>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Spending Trends</h3>
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-primary-50 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300 border border-primary-100 dark:border-primary-800/60">
+                ₹{periodTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <p className="text-sm text-slate-500 mt-0.5">{TIMEFRAME_META[timeframe].subtitle}</p>
+          </div>
+
+          {/* Enterprise Day / Week / Month Segmented Switcher */}
+          <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/70 dark:border-slate-700/60 self-start sm:self-auto shrink-0">
+            {(['day', 'week', 'month']).map((option) => {
+              const isActive = timeframe === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setTimeframe(option)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-white dark:bg-slate-700 text-primary-600 dark:text-primary-300 shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  {TIMEFRAME_META[option].label}
+                </button>
+              );
+            })}
+          </div>
         </div>
+
         <div className="h-[250px] sm:h-[300px] w-full mt-4">
           <ResponsiveContainer width="100%" height="100%" minWidth={0} initialDimension={{ width: 300, height: 250 }} className="focus:outline-none">
-            <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} style={{ outline: 'none' }}>
+            <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }} style={{ outline: 'none' }}>
               <defs>
                 <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
@@ -90,10 +255,28 @@ const ChartsWidget = ({ expenses }) => {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.2} />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+              <XAxis
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                interval="preserveStartEnd"
+                minTickGap={14}
+                tick={{ fontSize: 11, fill: '#64748b' }}
+                dy={10}
+              />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
               <RechartsTooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="value" name="Expense" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" style={{ outline: 'none' }} activeDot={{ style: { outline: 'none' } }} />
+              <Area
+                type="monotone"
+                dataKey="value"
+                name="Expense"
+                stroke="#3b82f6"
+                strokeWidth={3}
+                fillOpacity={1}
+                fill="url(#colorValue)"
+                style={{ outline: 'none' }}
+                activeDot={{ r: 5, strokeWidth: 2, style: { outline: 'none' } }}
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>

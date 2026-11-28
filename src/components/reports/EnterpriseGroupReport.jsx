@@ -39,7 +39,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import Barcode from 'react-barcode';
 import { motion, AnimatePresence } from 'framer-motion';
-import html2canvas from '../../utils/html2canvas';
+import { generateWhatsAppStatementImage } from '../../utils/whatsappReportImage';
 import ProofViewer from '../ProofViewer';
 import useGroupStore from '../../store/useGroupStore';
 
@@ -167,7 +167,6 @@ const EnterpriseGroupReport = React.forwardRef(({
   // WhatsApp Image Share State
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [whatsappModalData, setWhatsappModalData] = useState(null);
-  const [copiedSuccess, setCopiedSuccess] = useState(false);
 
   // Member Details Modal State
   const [selectedMemberDetail, setSelectedMemberDetail] = useState(null);
@@ -468,195 +467,64 @@ const EnterpriseGroupReport = React.forwardRef(({
   };
 
   // =========================================================================
-  // ENTERPRISE ULTRA-HD WHATSAPP REPORT IMAGE GENERATION
+  // ENTERPRISE PDF-GRADE WHATSAPP REPORT IMAGE GENERATION
   // =========================================================================
   const handleShareOnWhatsApp = async () => {
-    if (!reportCardRef.current || isGeneratingImage) return;
+    if (isGeneratingImage) return;
     setIsGeneratingImage(true);
 
     try {
-      const totalExp = Number(summary?.totalExpense || 0).toFixed(2);
-      const settled = totalSettledAmount.toFixed(2);
-      const pending = Number(summary?.totalOwed || 0).toFixed(2);
       const groupName = group.name || 'Group';
-
-      const shareMessage = `📊 *SmartSplit - Group Financial Report*\n` +
-        `📁 *Group:* ${groupName}\n` +
-        `💰 *Total Expenses:* ₹${totalExp}\n` +
-        `✅ *Settled Amount:* ₹${settled}\n` +
-        `⏳ *Pending Dues:* ₹${pending}\n` +
-        `👥 *Total Members:* ${totalMembers}\n\n` +
-        `📄 *Report ID:* ${reportId}\n` +
-        `✅ Official Verified Statement Image attached.`;
-
-      // 2.5x Retina Supersampling ensures crisp vector-quality text & numbers
-      const canvas = await html2canvas(reportCardRef.current, {
-        scale: 2.5,
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: '#FFFFFF',
-        logging: false,
-        imageTimeout: 10000,
-        windowWidth: 1200,
-        windowHeight: 1800,
-        onclone: (clonedDoc) => {
-          // 1. Completely strip dark mode from cloned document so text remains dark slate on white
-          clonedDoc.documentElement.classList.remove('dark');
-          clonedDoc.body.classList.remove('dark');
-          clonedDoc.querySelectorAll('.dark').forEach((el) => {
-            el.classList.remove('dark');
-          });
-
-          // 2. Hide interactive buttons and filter controls from the generated image
-          clonedDoc.querySelectorAll('[data-hide-on-export]').forEach((el) => {
-            el.style.display = 'none';
-          });
-
-          // 3. Force official desktop sheet width (1000px) and clean styling regardless of device viewport
-          const clonedCard = clonedDoc.querySelector('[data-report-card]');
-          if (clonedCard) {
-            clonedCard.classList.remove('dark');
-            clonedCard.style.width = '1000px';
-            clonedCard.style.minWidth = '1000px';
-            clonedCard.style.maxWidth = '1000px';
-            clonedCard.style.margin = '0 auto';
-            clonedCard.style.backgroundColor = '#FFFFFF';
-            clonedCard.style.color = '#0F172A';
-            clonedCard.style.boxShadow = 'none';
-            clonedCard.style.borderRadius = '24px';
-          }
-
-          // 4. Pre-convert all computed oklch styles to explicit inline rgb/rgba
-          const canvasHelper = document.createElement('canvas');
-          canvasHelper.width = 1;
-          canvasHelper.height = 1;
-          const helperCtx = canvasHelper.getContext('2d', { willReadFrequently: true });
-          const toRgb = (cStr, fallback = '#1e293b') => {
-            if (!cStr || cStr === 'transparent' || cStr === 'rgba(0, 0, 0, 0)') return 'transparent';
-            try {
-              helperCtx.clearRect(0, 0, 1, 1);
-              helperCtx.fillStyle = fallback;
-              helperCtx.fillStyle = cStr;
-              helperCtx.fillRect(0, 0, 1, 1);
-              const [r, g, b, a] = helperCtx.getImageData(0, 0, 1, 1).data;
-              if (a === 0) return 'transparent';
-              return a === 255 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
-            } catch {
-              return fallback;
-            }
-          };
-
-          if (clonedCard) {
-            clonedCard.querySelectorAll('*').forEach((el) => {
-              try {
-                const comp = window.getComputedStyle(el);
-                if (comp.color && comp.color.includes('oklch')) {
-                  el.style.color = toRgb(comp.color, '#0f172a');
-                }
-                if (comp.backgroundColor && comp.backgroundColor.includes('oklch')) {
-                  el.style.backgroundColor = toRgb(comp.backgroundColor, '#ffffff');
-                }
-                if (comp.borderColor && comp.borderColor.includes('oklch')) {
-                  el.style.borderColor = toRgb(comp.borderColor, '#e2e8f0');
-                }
-              } catch (e) {}
-            });
-          }
-
-          // 5. Convert any external avatar images to crisp inline data-URL canvas circles to guarantee zero CORS/taint
-          clonedDoc.querySelectorAll('img').forEach((img) => {
-            try {
-              if (img.src && !img.src.startsWith('data:')) {
-                const name = img.alt || 'Member';
-                const cleanName = name.replace(/[^a-zA-Z0-9 ]/g, '').trim();
-                const initials = (cleanName.split(/\s+/).map(p => p[0]).join('').slice(0, 2) || 'U').toUpperCase();
-                
-                const c = document.createElement('canvas');
-                c.width = 64;
-                c.height = 64;
-                const ctx = c.getContext('2d');
-                if (ctx) {
-                  ctx.fillStyle = '#2563EB';
-                  ctx.beginPath();
-                  ctx.arc(32, 32, 32, 0, Math.PI * 2);
-                  ctx.fill();
-
-                  ctx.fillStyle = '#FFFFFF';
-                  ctx.font = 'bold 26px sans-serif';
-                  ctx.textAlign = 'center';
-                  ctx.textBaseline = 'middle';
-                  ctx.fillText(initials, 32, 34);
-
-                  img.src = c.toDataURL('image/png');
-                }
-              }
-            } catch (imgErr) {
-              console.warn('Avatar sanitize warning:', imgErr);
-            }
-          });
-        }
+      const { blob, imageUrl } = await generateWhatsAppStatementImage({
+        group,
+        expenses,
+        settlements,
+        summary,
+        currentBalance,
+        hasCurrentMember: Boolean(currentMemberRecord),
+        reportId,
+        totalSettledAmount
       });
 
-      let blob;
-      try {
-        blob = await new Promise((resolve, reject) => {
-          canvas.toBlob((b) => {
-            if (b) resolve(b);
-            else reject(new Error('Canvas conversion to blob produced null'));
-          }, 'image/png', 1.0);
-        });
-      } catch (blobErr) {
-        const dataUrl = canvas.toDataURL('image/png', 1.0);
-        const arr = dataUrl.split(',');
-        const mime = arr[0].match(/:(.*?);/)[1];
-        const bstr = atob(arr[1]);
-        let n = bstr.length;
-        const u8arr = new Uint8Array(n);
-        while (n--) {
-          u8arr[n] = bstr.charCodeAt(n);
-        }
-        blob = new Blob([u8arr], { type: mime });
-      }
-      const imageUrl = canvas.toDataURL('image/png', 1.0);
       const fileName = `SmartSplit_Report_${groupName.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
       const imageFile = new File([blob], fileName, { type: 'image/png' });
 
-      // Try native Web Share API with file (Android / iOS / Modern Desktop)
+      // Automatically copy PNG image to clipboard if browser allows
+      let copied = false;
+      try {
+        if (navigator.clipboard && window.ClipboardItem) {
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': blob })
+          ]);
+          copied = true;
+        }
+      } catch (clipErr) {
+        console.log('Clipboard write will trigger on Open WhatsApp click:', clipErr);
+      }
+
+      // On mobile devices supporting file-only share, share the image file directly (no text)
       let sharedViaNative = false;
-      if (navigator.canShare && navigator.canShare({ files: [imageFile] })) {
+      const isMobileDevice = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobileDevice && navigator.canShare && navigator.canShare({ files: [imageFile] })) {
         try {
           await navigator.share({
-            files: [imageFile],
-            title: `${groupName} - Financial Report`,
-            text: shareMessage
+            files: [imageFile]
           });
           sharedViaNative = true;
         } catch (shareErr) {
           if (shareErr.name !== 'AbortError') {
-            console.log('Native share failed or dismissed, falling back:', shareErr);
+            console.log('Native file share dismissed, falling back to modal:', shareErr);
+          } else {
+            sharedViaNative = true;
           }
         }
       }
 
       if (!sharedViaNative) {
-        // Automatically copy to clipboard if supported
-        let copied = false;
-        try {
-          if (navigator.clipboard && window.ClipboardItem) {
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': blob })
-            ]);
-            copied = true;
-          }
-        } catch (clipErr) {
-          console.log('Clipboard direct write requires explicit user click:', clipErr);
-        }
-
         setWhatsappModalData({
           imageUrl,
           blob,
           fileName,
-          shareMessage,
           copiedToClipboard: copied
         });
       }
@@ -683,27 +551,29 @@ const EnterpriseGroupReport = React.forwardRef(({
     document.body.removeChild(a);
   };
 
-  const handleCopyImageToClipboard = async () => {
-    if (!whatsappModalData?.blob) return;
+  const handleOpenWhatsAppWeb = async () => {
+    if (!whatsappModalData) return;
+
+    // 1. Copy ONLY the PNG image to clipboard (never text)
+    let copied = false;
     try {
-      if (navigator.clipboard && window.ClipboardItem) {
+      if (navigator.clipboard && window.ClipboardItem && whatsappModalData.blob) {
         await navigator.clipboard.write([
           new ClipboardItem({ 'image/png': whatsappModalData.blob })
         ]);
-        setCopiedSuccess(true);
-        setTimeout(() => setCopiedSuccess(false), 2500);
+        copied = true;
+        setWhatsappModalData((prev) => (prev ? { ...prev, copiedToClipboard: true } : prev));
       }
     } catch (err) {
-      console.error('Failed to copy image to clipboard:', err);
+      console.error('Clipboard image copy failed:', err);
     }
-  };
 
-  const handleOpenWhatsAppWeb = async () => {
-    if (!whatsappModalData) return;
-    // Ensure image is copied to clipboard right before redirecting
-    await handleCopyImageToClipboard();
-    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappModalData.shareMessage)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+    if (!copied) {
+      alert('Your browser blocked automatic image copy. Please click "Download HD Image" to attach it in WhatsApp.');
+    }
+
+    // 2. Redirect to WhatsApp Web cleanly with NO pre-filled text
+    window.open('https://web.whatsapp.com/', '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -1600,11 +1470,11 @@ const EnterpriseGroupReport = React.forwardRef(({
                 <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl flex items-start gap-3 text-xs text-emerald-900 dark:text-emerald-200">
                   <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-extrabold text-sm">Report Image Ready in Crystal-Clear HD!</p>
+                    <p className="font-extrabold text-sm">Report Image Ready in PDF-Grade HD!</p>
                     <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
                       {whatsappModalData.copiedToClipboard
-                        ? 'Image has been copied to your clipboard. Click "Open WhatsApp" below and simply press Ctrl+V in your chat!'
-                        : 'Click "Open WhatsApp & Paste" or download the image below to share with your group.'}
+                        ? 'HD image is copied to your clipboard. Click "Open WhatsApp & Paste", select any friend/group, and press Ctrl+V!'
+                        : 'Click "Open WhatsApp & Paste" below — it will copy the HD image to your clipboard and open WhatsApp Web.'}
                     </p>
                   </div>
                 </div>
@@ -1623,7 +1493,7 @@ const EnterpriseGroupReport = React.forwardRef(({
                       {whatsappModalData.fileName}
                     </span>
                     <span className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-full">
-                      Full Single Image
+                      Zoom-Safe Ultra HD
                     </span>
                   </div>
                 </div>
@@ -1635,38 +1505,28 @@ const EnterpriseGroupReport = React.forwardRef(({
                   </p>
                   <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                     <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
-                    <span>Click <strong>Open WhatsApp & Paste</strong> button below.</span>
+                    <span>Click <strong>Open WhatsApp & Paste</strong> — copies the HD report image (no text) and opens WhatsApp.</span>
                   </div>
                   <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                     <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
-                    <span>Select any contact, friend or WhatsApp group.</span>
+                    <span>Select any friend, contact, or WhatsApp group.</span>
                   </div>
                   <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
                     <span className="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300 text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
-                    <span>Press <strong>Ctrl + V</strong> (Paste) — the full crystal-clear image attaches immediately!</span>
+                    <span>Press <strong>Ctrl + V</strong> (Paste) and hit Send — the crisp statement image attaches immediately!</span>
                   </div>
                 </div>
               </div>
 
               {/* Modal Footer Actions */}
               <div className="p-4 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={handleDownloadImageFile}
-                    className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    <Download size={14} /> Download HD Image
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCopyImageToClipboard}
-                    className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  >
-                    {copiedSuccess ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
-                    {copiedSuccess ? 'Copied!' : 'Copy Image'}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadImageFile}
+                  className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Download size={14} /> Download HD Image
+                </button>
 
                 <button
                   type="button"

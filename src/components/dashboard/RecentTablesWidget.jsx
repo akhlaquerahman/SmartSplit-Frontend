@@ -1,6 +1,36 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 
+const getAvatarFallback = (name = 'User') =>
+  `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=2563eb&color=fff&bold=true`;
+
+const getSettlementStatusMeta = (rawStatus) => {
+  const status = (rawStatus || 'pending').toLowerCase();
+
+  if (status === 'completed' || status === 'admin_approved') {
+    return {
+      label: status === 'admin_approved' ? 'Approved' : 'Completed',
+      badgeClass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-700/40'
+    };
+  }
+  if (status === 'pending') {
+    return {
+      label: 'Pending',
+      badgeClass: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 border border-amber-200/80 dark:border-amber-700/40'
+    };
+  }
+  if (status === 'disputed') {
+    return {
+      label: 'Disputed',
+      badgeClass: 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400 border border-orange-200/80 dark:border-orange-700/40'
+    };
+  }
+  return {
+    label: status.charAt(0).toUpperCase() + status.slice(1),
+    badgeClass: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400 border border-rose-200/80 dark:border-rose-700/40'
+  };
+};
+
 const RecentTablesWidget = ({ expenses = [], settlements = [] }) => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -12,6 +42,12 @@ const RecentTablesWidget = ({ expenses = [], settlements = [] }) => {
       >
         <div className="p-4 md:p-5 border-b dark:border-slate-800/60 flex justify-between items-center">
           <h3 className="text-fluid-h3 font-bold text-slate-800 dark:text-slate-100">Recent Expenses</h3>
+          {expenses.length > 0 && (
+            <span className="text-[11px] font-bold text-slate-400">
+              <span className="sm:hidden">Latest {Math.min(expenses.length, 3)}</span>
+              <span className="hidden sm:inline">Latest {Math.min(expenses.length, 5)}</span>
+            </span>
+          )}
         </div>
         
         {/* Desktop Table View */}
@@ -37,7 +73,7 @@ const RecentTablesWidget = ({ expenses = [], settlements = [] }) => {
                     </span>
                   </td>
                   <td className="p-4 text-right">
-                    <p className="text-sm font-black text-slate-800 dark:text-slate-200">₹{expense.amount?.toFixed(2)}</p>
+                    <p className="text-sm font-black text-slate-800 dark:text-slate-200">₹{Number(expense.amount || 0).toFixed(2)}</p>
                   </td>
                 </tr>
               ))}
@@ -50,16 +86,16 @@ const RecentTablesWidget = ({ expenses = [], settlements = [] }) => {
           </table>
         </div>
 
-        {/* Mobile Stacked Card View */}
+        {/* Mobile Stacked Card View (Max 3 items on mobile) */}
         <div className="sm:hidden flex flex-col divide-y divide-slate-100 dark:divide-slate-800/60 flex-1">
-          {expenses.slice(0, 5).map((expense) => (
-            <div key={expense._id || expense.id} className="p-4 flex flex-col gap-2 hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
+          {expenses.slice(0, 3).map((expense) => (
+            <div key={expense._id || expense.id} className="p-3.5 flex flex-col gap-1.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
               <div className="flex justify-between items-start">
                 <div className="flex-1 min-w-0 pr-2">
                   <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{expense.description}</p>
                   <p className="text-xs text-slate-500">{new Date(expense.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                 </div>
-                <p className="text-[15px] font-black text-slate-900 dark:text-white shrink-0">₹{expense.amount?.toFixed(2)}</p>
+                <p className="text-[15px] font-black text-slate-900 dark:text-white shrink-0">₹{Number(expense.amount || 0).toFixed(2)}</p>
               </div>
               <div>
                 <span className="inline-block px-2 py-1 bg-slate-100 dark:bg-slate-800 text-[10px] font-bold rounded-md uppercase text-slate-600 dark:text-slate-400">
@@ -83,6 +119,12 @@ const RecentTablesWidget = ({ expenses = [], settlements = [] }) => {
       >
         <div className="p-4 md:p-5 border-b dark:border-slate-800/60 flex justify-between items-center">
           <h3 className="text-fluid-h3 font-bold text-slate-800 dark:text-slate-100">Recent Settlements</h3>
+          {settlements.length > 0 && (
+            <span className="text-[11px] font-bold text-slate-400">
+              <span className="sm:hidden">Latest {Math.min(settlements.length, 3)}</span>
+              <span className="hidden sm:inline">Latest {Math.min(settlements.length, 5)}</span>
+            </span>
+          )}
         </div>
         
         {/* Desktop Table View */}
@@ -96,29 +138,39 @@ const RecentTablesWidget = ({ expenses = [], settlements = [] }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {settlements.slice(0, 5).map((settlement) => (
-                <tr key={settlement._id || settlement.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
-                  <td className="p-4 flex items-center gap-2">
-                    <img src={settlement.payerId?.avatar || settlement.payer?.avatar} className="w-7 h-7 rounded-full object-cover border border-slate-200 dark:border-slate-700" alt="Payer" />
-                    <div>
-                      <p className="text-sm font-bold text-slate-800 dark:text-slate-200 line-clamp-1">{settlement.payerId?.name || settlement.payer?.name}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{new Date(settlement.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
-                    </div>
-                  </td>
-                  <td className="p-4">
-                    <span className={`px-2 py-1 text-[10px] font-bold rounded-md uppercase ${
-                      settlement.status === 'Completed' ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400' :
-                      settlement.status === 'Pending' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
-                      'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
-                    }`}>
-                      {settlement.status || 'Pending'}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <p className="text-sm font-black text-slate-800 dark:text-slate-200">₹{settlement.amount?.toFixed(2)}</p>
-                  </td>
-                </tr>
-              ))}
+              {settlements.slice(0, 5).map((settlement) => {
+                const payerName = settlement.payerId?.name || settlement.payer?.name || 'User';
+                const payerAvatar = settlement.payerId?.avatar || settlement.payer?.avatar || getAvatarFallback(payerName);
+                const statusMeta = getSettlementStatusMeta(settlement.status);
+
+                return (
+                  <tr key={settlement._id || settlement.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
+                    <td className="p-4 flex items-center gap-2.5">
+                      <img
+                        src={payerAvatar}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = getAvatarFallback(payerName);
+                        }}
+                        className="w-7 h-7 rounded-full object-cover border border-slate-200 dark:border-slate-700 bg-slate-100 shrink-0"
+                        alt={payerName}
+                      />
+                      <div>
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 line-clamp-1">{payerName}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{new Date(settlement.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                      </div>
+                    </td>
+                    <td className="p-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wide ${statusMeta.badgeClass}`}>
+                        {statusMeta.label}
+                      </span>
+                    </td>
+                    <td className="p-4 text-right">
+                      <p className="text-sm font-black text-slate-800 dark:text-slate-200">₹{Number(settlement.amount || 0).toFixed(2)}</p>
+                    </td>
+                  </tr>
+                );
+              })}
               {(!settlements || settlements.length === 0) && (
                 <tr>
                   <td colSpan="3" className="p-8 text-center text-slate-500 text-sm">No settlements found</td>
@@ -128,33 +180,43 @@ const RecentTablesWidget = ({ expenses = [], settlements = [] }) => {
           </table>
         </div>
 
-        {/* Mobile Stacked Card View */}
+        {/* Mobile Stacked Card View (Max 3 items on mobile) */}
         <div className="sm:hidden flex flex-col divide-y divide-slate-100 dark:divide-slate-800/60 flex-1">
-          {settlements.slice(0, 5).map((settlement) => (
-            <div key={settlement._id || settlement.id} className="p-4 flex flex-col gap-2.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <img src={settlement.payerId?.avatar || settlement.payer?.avatar} className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700" alt="Payer" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{settlement.payerId?.name || settlement.payer?.name}</p>
-                    <p className="text-xs text-slate-500 truncate">{new Date(settlement.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+          {settlements.slice(0, 3).map((settlement) => {
+            const payerName = settlement.payerId?.name || settlement.payer?.name || 'User';
+            const payerAvatar = settlement.payerId?.avatar || settlement.payer?.avatar || getAvatarFallback(payerName);
+            const statusMeta = getSettlementStatusMeta(settlement.status);
+
+            return (
+              <div key={settlement._id || settlement.id} className="p-3.5 flex flex-col gap-2 hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <img
+                      src={payerAvatar}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = getAvatarFallback(payerName);
+                      }}
+                      className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 bg-slate-100"
+                      alt={payerName}
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">{payerName}</p>
+                      <p className="text-xs text-slate-500 truncate">{new Date(settlement.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[15px] font-black text-slate-900 dark:text-white">₹{Number(settlement.amount || 0).toFixed(2)}</p>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-[15px] font-black text-slate-900 dark:text-white">₹{settlement.amount?.toFixed(2)}</p>
+                <div className="flex justify-end">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 text-[10px] font-bold rounded-full uppercase tracking-wide ${statusMeta.badgeClass}`}>
+                    {statusMeta.label}
+                  </span>
                 </div>
               </div>
-              <div className="flex justify-end">
-                <span className={`inline-block px-2 py-1 text-[10px] font-bold rounded-md uppercase ${
-                  settlement.status === 'Completed' ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400' :
-                  settlement.status === 'Pending' ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400' :
-                  'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
-                }`}>
-                  {settlement.status || 'Pending'}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {(!settlements || settlements.length === 0) && (
             <div className="p-8 text-center text-slate-500 text-sm">No settlements found</div>
           )}
